@@ -4,12 +4,15 @@
 
 #include "defs.h"
 #include "tResource.h"
+#include "tSafePTR.h"
 #include "eCoord.h"
 #include "tValue.h"
 #include <map>
 #include <string>
 
 class eGrid;
+class eWorld;
+class eSurface;
 class gArena;
 class ePoint;
 class gGame;
@@ -75,12 +78,16 @@ class gParser : public tResource {
     gArena *theArena; /*Patch: All the world structure should be created by the parser*/
     eGrid *theGrid; /*Patch: All the world structure should be created by the parser*/
 
+    tJUST_CONTROLLED_PTR<eWorld> theWorld_; /* surface graph built for this map */
+    bool is3DMap_;                          /* true for map>=2.0 with 3D negotiated on */
+
     REAL rimTexture; /* The rim wall texture coordinate */
 
     ePoint * DrawRim( eGrid * grid, ePoint * start, eCoord const & stop, REAL h=10000 ); /* Draws a rim wall segment */
 
 public:
     gParser(gArena *anArena, eGrid *aGrid);
+    ~gParser(); // defined in gParser.cpp where eWorld is complete (controlled ptr member)
     //    gParser(const gGame *aGame, gArena *anArena, tControlledPTR<eGrid> aGrid);
     void setSizeMultiplier(REAL aSizeMultiplier);
     void Parse();
@@ -147,6 +154,15 @@ protected:
     void parseField(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword);
     void parseWorld(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword = NULL);
     void parseMap(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword = NULL);
+
+    /* map-2.0 surface-graph primitives (only parsed when 3D is active) */
+    eGrid *   newSurfaceGrid();                                              /* fresh planar chart matching the ground winding */
+    void      parseFloor(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword);
+    void      parseRamp(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword);
+    void      parseBuilding(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword);
+public:
+    eWorld *  GetWorld() const { return theWorld_; }                         /* surface graph built by the last Parse() */
+protected:
 
     void parseSettings(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword = NULL);
     void parseSetting(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword);

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE Resource SYSTEM "map-2.0.dtd">
+<Resource type="aamap" name="test-2.0-stacked" version="2.0" author="OddlyDoddly" category="test">
+	<!-- Two drivable floors overlapping in (x,y): a ground floor and an air
+	     floor directly above it (a true vertical overhang), joined by a ramp.
+	     Exercises the surface-graph: two surfaces with distinct ids and a ramp
+	     that stitches portals to both. Driving across the ramp is PR #2. -->
+	<Map version="200">
+		<World>
+			<Field>
+				<Axes number="4" />
+				<Spawn x="250" y="150" xdir="0" ydir="1" />
+				<Spawn x="250" y="350" xdir="0" ydir="-1" />
+
+				<!-- ground level: full arena -->
+				<Floor level="ground" material="grid">
+					<Point x="0"   y="0"   />
+					<Point x="500" y="0"   />
+					<Point x="500" y="500" />
+					<Point x="0"   y="500" />
+				</Floor>
+
+				<!-- air level: a platform directly above part of the ground -->
+				<Floor level="air" material="light">
+					<Point x="100" y="100" />
+					<Point x="400" y="100" />
+					<Point x="400" y="400" />
+					<Point x="100" y="400" />
+				</Floor>
+
+				<!-- ramp rising eastward from ground onto the air platform.
+				     low seam midpoint (250,250) lands on the ground floor;
+				     high seam midpoint (350,250) lands on the air platform,
+				     so both ends stitch a portal. -->
+				<Ramp fromLevel="ground" toLevel="air" direction="east"
+				      x="250" y="150" width="200" length="100" />
+			</Field>
+		</World>
+	</Map>
+</Resource>

@@ -41,6 +41,7 @@ class gCycle;
 class gCycleMovement;
 class gNetPlayerWall;
 class eTempEdge;
+class ePortal;
 
 namespace Game { class PlayerWallSync; }
 
@@ -69,6 +70,26 @@ private:
     mutable REAL lastRenderHeight_; //!< the last height the wall was rendered with
 
     REAL tBeg_, tEnd_;          //!< begin and end texture coordinates
+};
+
+//! A rim-like wall placed along a portal seam between two surfaces.
+//!
+//! Geometrically identical to a gWallRim, but it is NOT massive: a cycle may
+//! pass through it (PR #2 hands the cycle to the neighbouring surface here).
+//! In PR #1 it is created and rendered as a seam but is otherwise inert.
+class gPortalWall : public gWallRim {
+public:
+    gPortalWall( eGrid * grid, ePortal * portal, REAL h = 10000 )
+        : gWallRim( grid, h ), portal_( portal ) {}
+    gPortalWall( eGrid * grid, ePortal * portal, REAL tBeg, REAL tEnd, REAL h = 10000 )
+        : gWallRim( grid, tBeg, tEnd, h ), portal_( portal ) {}
+
+    virtual bool Massive() const { return false; } //!< cycles may cross a portal
+
+    ePortal * Portal() const { return portal_; }
+
+private:
+    ePortal * portal_; //!< the seam this wall represents (not owned)
 };
 
 //! a coordinate entry for wall points, where walls turn into holes
@@ -130,6 +151,12 @@ public:
     gCycleMovement *CycleMovement() const;
     gNetPlayerWall* NetWall() const;
 
+    //! the surface-graph surface this wall segment lives on (0 == ground).
+    //! Established now so PR #2/#3 collision and sync can honour multi-surface
+    //! trails; defaults to 0 and is unused while the game is 2D.
+    unsigned short SurfaceId() const { return surfaceId_; }
+    void SetSurfaceId( unsigned short id ) { surfaceId_ = id; }
+
     void Insert();
 
     //  void SetNetWall( const gNetPlayerWall* netWall );
@@ -145,6 +172,8 @@ private:
     int windingNumber_;
     // REAL begAlpha_, endAlpha_;	// relative position i gNetPlayerWall
     REAL begDist_, endDist_;	// cycle driving distance at beginning and end
+
+    unsigned short surfaceId_ = 0; //!< surface-graph surface this wall is on
 
     gPlayerWall();
 };

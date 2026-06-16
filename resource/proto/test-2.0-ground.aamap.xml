@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE Resource SYSTEM "map-2.0.dtd">
+<Resource type="aamap" name="test-2.0-ground" version="2.0" author="OddlyDoddly" category="test">
+	<!-- A single ground-level floor. With the 3D feature on this should play
+	     identically to a classic 2D square arena; with 3D off it falls back to
+	     the ground plane. Used by the PR #1 regression test. -->
+	<Map version="200">
+		<World>
+			<Field>
+				<Axes number="4" />
+				<Spawn x="250" y="150" xdir="0"  ydir="1"  />
+				<Spawn x="250" y="350" xdir="0"  ydir="-1" />
+				<Spawn x="150" y="250" xdir="1"  ydir="0"  />
+				<Spawn x="350" y="250" xdir="-1" ydir="0"  />
+
+				<Floor level="ground" material="grid">
+					<Point x="0"   y="0"   />
+					<Point x="500" y="0"   />
+					<Point x="500" y="500" />
+					<Point x="0"   y="500" />
+				</Floor>
+			</Field>
+		</World>
+	</Map>
+</Resource>

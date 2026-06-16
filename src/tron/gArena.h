@@ -29,10 +29,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #define ArmageTron_ARENA_H
 
 #include "tList.h"
+#include "tSafePTR.h"
 #include "eCoord.h"
 #include "eSpawn.h"
 
 class eGrid;
+class eWorld;
 class gParser;
 class gArena;
 
@@ -77,8 +79,13 @@ public:
 
     void RemoveAllSpawn();
 
+    //! the surface graph for the current map (ground surface + any 3D surfaces)
+    eWorld * GetWorld() const { return world_; }
+    void     SetWorld( eWorld * world );
+
 private:
     tList<gSpawnPoint> spawnPoints; //!< the list of active spawn points
+    tJUST_CONTROLLED_PTR<eWorld> world_; //!< surface graph for the current map
 };
 
 #endif

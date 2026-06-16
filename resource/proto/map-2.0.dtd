@@ -1,0 +1,99 @@
+<!-- version="2.0" -->
+<!--
+  Armagetron Advanced map format 2.0 (surface-graph / 3D).
+
+  This extends the 0.3.1 map grammar with the surface-graph primitives used by
+  the third-dimension rework: typed Floor / Ramp / Building elements that the
+  parser turns into drivable surfaces (each its own planar chart) stitched
+  together by auto-derived portals.
+
+  Maps using these primitives must declare <Map version="200"> (the integer
+  encoding of "2.0"; plain version="2" remains the 2D zones-v2 format). The 3D
+  primitives are only honoured when the THREE_D network feature is negotiated on
+  for every peer; otherwise the server collapses the map onto the ground plane.
+-->
+
+<!ELEMENT Resource (Map)>
+<!ATTLIST Resource
+       type (aamap) "aamap"
+       name CDATA #REQUIRED
+       version CDATA "2.0"
+       author CDATA "Anonymous"
+       category CDATA "unsorted"
+       comissioner CDATA #IMPLIED
+>
+
+<!ELEMENT Map (Settings?, World)>
+
+<!ELEMENT Settings (Setting*)>
+<!ELEMENT Setting EMPTY>
+<!ATTLIST Setting name CDATA #REQUIRED>
+<!ATTLIST Setting value CDATA #REQUIRED>
+
+<!ELEMENT World (Field)>
+
+<!-- a field may now also contain Floor / Ramp / Building primitives -->
+<!ELEMENT Field (Axes?, Ownership?, (Spawn | Wall | Monitor | Zone | Zone_v1 | Floor | Ramp | Building )*)>
+
+<!ELEMENT Axes (Axis*)>
+<!ELEMENT Ownership (TeamOwnership*)>
+<!ELEMENT Spawn EMPTY>
+<!ELEMENT Wall (Point+) >
+<!ELEMENT Point EMPTY>
+<!ELEMENT Axis EMPTY>
+<!ELEMENT Zone ((ShapeCircle | ShapePolygon), (Enter | Inside | Leave | Outside)+ ) >
+
+<!-- ===================== surface-graph primitives ===================== -->
+
+<!-- a flat drivable panel on one z-level; its Points form the boundary -->
+<!ELEMENT Floor (Point+)>
+<!ATTLIST Floor level (basement | ground | air) "ground">
+<!ATTLIST Floor material (grid | light | glass) "grid">
+<!ATTLIST Floor id CDATA #IMPLIED>
+
+<!-- a fixed-angle ramp connecting two adjacent z-levels along a cardinal axis.
+     (x,y) is the base corner; the ramp rises over `length` in `direction`,
+     spanning `width` to the left of that direction. -->
+<!ELEMENT Ramp EMPTY>
+<!ATTLIST Ramp fromLevel (basement | ground | air) #REQUIRED>
+<!ATTLIST Ramp toLevel   (basement | ground | air) #REQUIRED>
+<!ATTLIST Ramp direction (east | west | north | south) #REQUIRED>
+<!ATTLIST Ramp x CDATA #REQUIRED>
+<!ATTLIST Ramp y CDATA #REQUIRED>
+<!ATTLIST Ramp width  CDATA #REQUIRED>
+<!ATTLIST Ramp length CDATA #REQUIRED>
+<!ATTLIST Ramp id CDATA #IMPLIED>
+
+<!-- an extruded obstacle (Tron-Legacy block tower); Points form the footprint -->
+<!ELEMENT Building (Point+)>
+<!ATTLIST Building height CDATA #REQUIRED>
+<!ATTLIST Building style CDATA "tron">
+<!ATTLIST Building level (basement | ground | air) "ground">
+
+<!-- =================================================================== -->
+
+<!ATTLIST Map version CDATA #REQUIRED>
+
+<!ATTLIST Field logicalBox (true | false) "true">
+
+<!ATTLIST Axes number CDATA "4">
+<!ATTLIST Axes normalize (true | false) "true">
+
+<!ATTLIST Spawn x CDATA #REQUIRED>
+<!ATTLIST Spawn y CDATA #REQUIRED>
+<!ATTLIST Spawn xdir CDATA #IMPLIED>
+<!ATTLIST Spawn ydir CDATA #IMPLIED>
+<!ATTLIST Spawn angle CDATA #IMPLIED>
+<!ATTLIST Spawn length CDATA "1.0">
+<!ATTLIST Spawn level (basement | ground | air) "ground">
+
+<!ATTLIST Wall height CDATA #IMPLIED>
+<!ATTLIST Wall level (basement | ground | air) "ground">
+
+<!ATTLIST Point x CDATA #REQUIRED>
+<!ATTLIST Point y CDATA #REQUIRED>
+
+<!ATTLIST Axis xdir CDATA #IMPLIED>
+<!ATTLIST Axis ydir CDATA #IMPLIED>
+<!ATTLIST Axis angle CDATA #IMPLIED>
+<!ATTLIST Axis length CDATA "1.0">
