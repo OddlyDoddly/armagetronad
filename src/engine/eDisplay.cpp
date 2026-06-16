@@ -74,9 +74,7 @@ REAL se_lowerSkyHeight=50;
 static tSettingItem<REAL> sec_upperSkyHeight("UPPER_SKY_HEIGHT",se_upperSkyHeight);
 static tSettingItem<REAL> sec_lowerSkyHeight("LOWER_SKY_HEIGHT",se_lowerSkyHeight);
 
-// Enable the modern GLSL rendering path (requires GLEW). Off by default.
-static bool sg_modernRenderer = false;
-static tSettingItem<bool> sg_modernRendererConf("MODERN_RENDERER", sg_modernRenderer);
+// sg_modernRenderer is defined in rGLRender.cpp; declared in rRender.h.
 
 #ifndef DEDICATED
 

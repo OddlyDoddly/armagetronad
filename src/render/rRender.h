@@ -108,6 +108,7 @@ protected:
 };
 
 extern rRenderer *renderer;
+extern bool sg_modernRenderer;
 
 inline void Vertex(REAL x, REAL y){
     renderer->Vertex(x,y);

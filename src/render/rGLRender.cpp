@@ -27,6 +27,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #include "aa_config.h"
 
+// sg_modernRenderer is defined here and declared extern in rRender.h.
+bool sg_modernRenderer = false;
+
 #ifndef DEDICATED
 
 #define DONTDOIT
@@ -34,6 +37,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "rGL.h"
 #include "tMemManager.h"
 #include "tError.h"
+#include "tConfiguration.h"
+#ifdef HAVE_GLEW
+#include "gl/gl_backend.h"
+#endif
+
+static tSettingItem<bool> sg_modernRendererConf("MODERN_RENDERER", sg_modernRenderer);
 
 class glRenderer: public rRenderer{
     GLenum lastPrimitive;
@@ -220,7 +229,7 @@ public:
 
     virtual void ScaleMatrix(REAL f1, REAL f2, REAL f3){
         End(true);
-        glScalef(f1,f2,f2);
+        glScalef(f1,f2,f3);
     };
 
     virtual void TranslateMatrix(REAL x1, REAL x2, REAL x3){
@@ -253,6 +262,12 @@ public:
 };
 
 void sr_glRendererInit(){
+#ifdef HAVE_GLEW
+    if (sg_modernRenderer && gl::ModernGLRenderer::IsSupported()) {
+        new gl::ModernGLRenderer();
+        return;
+    }
+#endif
     tNEW(glRenderer);
 }
 

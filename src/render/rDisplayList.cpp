@@ -105,6 +105,10 @@ bool rDisplayList::OnCall()
 #ifndef DEDICATED
     tASSERT( !filling_ );
 
+    // Modern renderer manages its own VBO cache; GL display lists are unused.
+    if ( sg_modernRenderer )
+        return false;
+
     // abort previous glBegin block
     RenderEnd();
 
@@ -228,6 +232,10 @@ rDisplayListFiller::rDisplayListFiller( rDisplayList & list, bool respectBlackli
 void rDisplayListFiller::Start( bool respectBlacklist )
 {
 #ifndef DEDICATED
+    // Modern renderer skips GL display list recording entirely.
+    if ( sg_modernRenderer )
+        return;
+
     bool useList = sr_useDisplayLists != rDisplayList_Off && list_.inhibit_ == 0 && !sr_currentFiller;
 
     // don't ever use display lists if they are blacklisted
