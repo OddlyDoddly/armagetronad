@@ -137,7 +137,26 @@ else
 render_extra=
 endif
 
-librender_a_SOURCES=${render_extra} render/rConsole.cpp render/rConsoleGraph.cpp render/rConsole.h render/rFont.cpp\
+# Experimental Vulkan backend (only compiled with --with-vulkan).
+if HAVE_VULKAN
+vulkan_sources=render/vk/vk_math.h \
+	render/vk/vk_context.h render/vk/vk_context.cpp \
+	render/vk/vk_renderer.h render/vk/vk_renderer.cpp
+# SPIR-V byte-code headers are generated from the GLSL sources below.
+BUILT_SOURCES=render/vk/batch_vert.spv.h render/vk/batch_frag.spv.h
+else
+vulkan_sources=
+endif
+
+# Rule: compile GLSL -> SPIR-V -> C header (glslangValidator --vn).
+render/vk/batch_vert.spv.h: $(srcdir)/render/vk/shaders/batch.vert
+	$(GLSLANG) -V $< --vn batch_vert_spv -o $@
+render/vk/batch_frag.spv.h: $(srcdir)/render/vk/shaders/batch.frag
+	$(GLSLANG) -V $< --vn batch_frag_spv -o $@
+
+EXTRA_DIST += render/vk/shaders/batch.vert render/vk/shaders/batch.frag
+
+librender_a_SOURCES=${render_extra} ${vulkan_sources} render/rConsole.cpp render/rConsoleGraph.cpp render/rConsole.h render/rFont.cpp\
 	render/rFont.h render/rGL.cpp render/rGL.h render/rGLEW.h render/rGLRender.cpp render/rModel.cpp render/rModel.h render/rRender.cpp\
         render/rDisplayList.h render/rDisplayList.cpp \
 	render/rRender.h render/rScreen.cpp render/rScreen.h render/rSDL.h render/rSysdep.cpp render/rSysdep.h\
