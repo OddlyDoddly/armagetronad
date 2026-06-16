@@ -86,7 +86,7 @@ public:
 
     virtual bool Massive() const { return false; } //!< cycles may cross a portal
 
-    ePortal * Portal() const { return portal_; }
+    virtual ePortal * Portal() const { return portal_; }
 
 private:
     ePortal * portal_; //!< the seam this wall represents (not owned)

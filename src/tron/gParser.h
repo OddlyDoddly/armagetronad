@@ -84,6 +84,7 @@ class gParser : public tResource {
     REAL rimTexture; /* The rim wall texture coordinate */
 
     ePoint * DrawRim( eGrid * grid, ePoint * start, eCoord const & stop, REAL h=10000 ); /* Draws a rim wall segment */
+    ePoint * DrawPortal( eGrid * grid, ePoint * start, eCoord const & stop, class ePortal * portal, REAL h=10000 ); /* Draws a non-massive portal seam */
 
 public:
     gParser(gArena *anArena, eGrid *aGrid);

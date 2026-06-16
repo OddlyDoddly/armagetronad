@@ -140,6 +140,11 @@ public:
     // is it still massive? (i.e. is the player it belongs to alive?)
     virtual bool Massive() const{return true;}
 
+    // if this wall is a portal seam, the portal it represents (else NULL).
+    // Lets the engine-level movement code hand a game object across to the
+    // neighbouring surface of the surface graph.
+    virtual class ePortal * Portal() const { return NULL; }
+
     // what happens to a gameobject that passes here?
     virtual void PassingGameObject(eGameObject *pass,REAL time,REAL pos,int recursion=1);
 

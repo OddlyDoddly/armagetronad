@@ -82,8 +82,8 @@ eSurface * eWorld::FloorAt( eZLevel level, eCoord const & worldPoint ) const
     return NULL;
 }
 
-ePortal * eWorld::MakePortal( eSurface * a, eSurface * b,
-                              eCoord const & beg, eCoord const & end )
+ePortal * eWorld::Connect( eSurface * a, eSurface * b,
+                           eCoord const & beg, eCoord const & end )
 {
     // identity local frames (local == world) in PR #1, so the seam endpoints
     // are the same on both sides; PR #2 will refine frames for rotated ramps.
@@ -106,7 +106,7 @@ int eWorld::StitchRamp( eSurface * ramp,
     eSurface * lowFloor = FloorAt( fromLevel, lowMid );
     if ( lowFloor )
     {
-        MakePortal( ramp, lowFloor, lowBeg, lowEnd );
+        Connect( ramp, lowFloor, lowBeg, lowEnd );
         ++created;
     }
     else
@@ -118,7 +118,7 @@ int eWorld::StitchRamp( eSurface * ramp,
     eSurface * highFloor = FloorAt( toLevel, highMid );
     if ( highFloor )
     {
-        MakePortal( ramp, highFloor, highBeg, highEnd );
+        Connect( ramp, highFloor, highBeg, highEnd );
         ++created;
     }
     else

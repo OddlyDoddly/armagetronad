@@ -68,6 +68,11 @@ public:
     //! find a Floor surface at the given level whose footprint contains p
     eSurface * FloorAt( eZLevel level, eCoord const & worldPoint ) const;
 
+    //! create and register a portal joining two surfaces along a seam, and
+    //! record it on both surfaces. Returns the portal (owned by the world).
+    ePortal * Connect( eSurface * a, eSurface * b,
+                       eCoord const & beg, eCoord const & end );
+
     //! link a ramp to the floors it meets at its low/high seams, creating
     //! portals. Returns the number of portals created (0..2). Warns when a
     //! seam finds no matching floor (a surface would otherwise be an island).
@@ -88,9 +93,6 @@ private:
     bool       is3D_;
     std::vector< tJUST_CONTROLLED_PTR< eSurface > > surfaces_;
     std::vector< tJUST_CONTROLLED_PTR< ePortal  > > portals_;
-
-    ePortal * MakePortal( eSurface * a, eSurface * b,
-                          eCoord const & beg, eCoord const & end );
 };
 
 #endif // ArmageTron_WORLD_H

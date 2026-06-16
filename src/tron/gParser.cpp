@@ -1596,6 +1596,15 @@ ePoint * gParser::DrawRim( eGrid * grid, ePoint * start, eCoord const & stop, RE
     return grid->DrawLine( start, stop, newWall, 0 );
 }
 
+ePoint * gParser::DrawPortal( eGrid * grid, ePoint * start, eCoord const & stop, ePortal * portal, REAL h )
+{
+    REAL length = ( stop - (*start) ).Norm();
+    REAL rimTextureStop = rimTexture + length;
+    tJUST_CONTROLLED_PTR< gPortalWall > newWall = tNEW( gPortalWall )( grid, portal, rimTexture, rimTextureStop, h );
+    rimTexture = rimTextureStop;
+    return grid->DrawLine( start, stop, newWall, 0 );
+}
+
 // ---------------------------------------------------------------------------
 // map-2.0 surface-graph primitives
 // ---------------------------------------------------------------------------
@@ -1726,15 +1735,40 @@ gParser::parseRamp(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
     footprint.push_back( highBeg );
     surface->SetFootprint( footprint );
 
-    // draw the ramp's boundary into its own grid
-    ePoint * R = sgrid->Insert( lowBeg );
-    R = this->DrawRim( sgrid, R, lowEnd );
-    R = this->DrawRim( sgrid, R, highEnd );
-    R = this->DrawRim( sgrid, R, highBeg );
-    this->DrawRim( sgrid, R, lowBeg );
+    // auto-derive portals to the floors the ramp meets at each end. The seam
+    // midpoints decide which floor (and thus z-level) each end connects to.
+    eCoord lowMid  = ( lowBeg  + lowEnd  ) * 0.5;
+    eCoord highMid = ( highBeg + highEnd ) * 0.5;
+    eSurface * lowFloor  = theWorld_->FloorAt( from, lowMid );
+    eSurface * highFloor = theWorld_->FloorAt( to,   highMid );
+    ePortal * lowPortal  = lowFloor  ? theWorld_->Connect( surface, lowFloor,  lowBeg,  lowEnd  ) : NULL;
+    ePortal * highPortal = highFloor ? theWorld_->Connect( surface, highFloor, highBeg, highEnd ) : NULL;
+    if ( !lowFloor )
+        con << "Warning: ramp low seam found no floor to connect to.\n";
+    if ( !highFloor )
+        con << "Warning: ramp high seam found no floor to connect to.\n";
 
-    // auto-derive portals to the floors the ramp meets at each end
-    theWorld_->StitchRamp( surface, lowBeg, lowEnd, from, highBeg, highEnd, to );
+    // Draw the ramp boundary into its own grid. The two end seams become
+    // non-massive portal walls (drive on/off the ramp); the two long sides are
+    // massive guard rails. A seam with no matching floor falls back to a rail.
+    ePoint * R = sgrid->Insert( lowBeg );
+    R = lowPortal  ? this->DrawPortal( sgrid, R, lowEnd,  lowPortal  ) : this->DrawRim( sgrid, R, lowEnd );
+    R = this->DrawRim( sgrid, R, highEnd );                                   // guard rail
+    R = highPortal ? this->DrawPortal( sgrid, R, highBeg, highPortal ) : this->DrawRim( sgrid, R, highBeg );
+    this->DrawRim( sgrid, R, lowBeg );                                        // guard rail
+
+    // Mirror each seam into the adjacent floor's grid as a portal, so a cycle
+    // driving on the floor can step onto the ramp at the same world seam.
+    if ( lowPortal )
+    {
+        ePoint * F = lowFloor->Grid()->Insert( lowBeg );
+        this->DrawPortal( lowFloor->Grid(), F, lowEnd, lowPortal );
+    }
+    if ( highPortal )
+    {
+        ePoint * F = highFloor->Grid()->Insert( highBeg );
+        this->DrawPortal( highFloor->Grid(), F, highEnd, highPortal );
+    }
 }
 
 void
