@@ -55,6 +55,11 @@ static tSettingItem<REAL> f_m("FLOOR_MIRROR_INT",sr_floorMirror_strength);
 #include "eDebugLine.h"
 #include "tDirectories.h"
 #include "eRectangle.h"
+#ifdef HAVE_GLEW
+#include "rShader.h"
+#include "gl/gl_mesh.h"
+#include <optional>
+#endif
 
 #define eWall_h 4
 #define view_h 2.7
@@ -68,6 +73,10 @@ REAL se_lowerSkyHeight=50;
 
 static tSettingItem<REAL> sec_upperSkyHeight("UPPER_SKY_HEIGHT",se_upperSkyHeight);
 static tSettingItem<REAL> sec_lowerSkyHeight("LOWER_SKY_HEIGHT",se_lowerSkyHeight);
+
+// Enable the modern GLSL rendering path (requires GLEW). Off by default.
+static bool sg_modernRenderer = false;
+static tSettingItem<bool> sg_modernRendererConf("MODERN_RENDERER", sg_modernRenderer);
 
 #ifndef DEDICATED
 
@@ -354,6 +363,100 @@ void paint_sr_lowerSky(eGrid *grid, int viewer,bool sr_upperSky, eCamera* cam ){
         glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
 }
 
+#ifdef HAVE_GLEW
+// GLSL source embedded here; canonical copies live in src/render/shaders/floor.{vert,frag}.
+static constexpr char kFloorVert[] = R"GLSL(
+#version 330 core
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aUV;
+uniform mat4 uModelView;
+uniform mat4 uProjection;
+out vec2 vWorldXY;
+void main() {
+    vWorldXY = aPos.xy;
+    gl_Position = uProjection * uModelView * vec4(aPos, 1.0);
+}
+)GLSL";
+
+static constexpr char kFloorFrag[] = R"GLSL(
+#version 330 core
+in vec2 vWorldXY;
+uniform float uGridSize;
+uniform vec2  uCamPos;
+uniform vec3  uLineColor;
+uniform float uMaxDist;
+out vec4 fragColor;
+void main() {
+    if (uGridSize < 0.01) { fragColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+    vec2 cell = mod(vWorldXY, uGridSize) / uGridSize;
+    vec2 f = abs(cell - 0.5);
+    const float lineW = 0.04;
+    float line = max(
+        smoothstep(0.5 - lineW, 0.5, f.x),
+        smoothstep(0.5 - lineW, 0.5, f.y)
+    );
+    float dist = length(vWorldXY - uCamPos);
+    float fade = 1.0 - clamp(dist / uMaxDist, 0.0, 1.0);
+    fade *= fade;
+    fragColor = vec4(uLineColor * line * fade, 1.0);
+}
+)GLSL";
+
+// Draw the neon grid floor using the modern GLSL path.
+// Called when MODERN_RENDERER=1; replaces the immediate-mode rFLOOR_GRID path.
+static void se_RenderModernFloor(eCamera* cam) {
+    static std::optional<rShader> s_shader;
+    static std::optional<gl_Mesh>  s_mesh;
+    static bool s_initDone = false;
+
+    if (!s_initDone) {
+        s_initDone = true;
+        auto result = rShader::create(kFloorVert, kFloorFrag);
+        if (!result) {
+            con << "Modern floor shader error:\n" << result.error() << "\n";
+            sg_modernRenderer = false;
+            return;
+        }
+        s_shader.emplace(std::move(*result));
+        s_mesh.emplace();
+
+        constexpr float FAR = 1000.f;
+        const gl_Vertex verts[] = {
+            {-FAR, -FAR, 0.f,  0.f, 0.f},
+            { FAR, -FAR, 0.f,  1.f, 0.f},
+            { FAR,  FAR, 0.f,  1.f, 1.f},
+            {-FAR, -FAR, 0.f,  0.f, 0.f},
+            { FAR,  FAR, 0.f,  1.f, 1.f},
+            {-FAR,  FAR, 0.f,  0.f, 1.f},
+        };
+        s_mesh->upload(verts, 6);
+    }
+
+    if (!s_shader) return;
+
+    // Read the matrices the camera setup placed on the GL stack
+    float mv[16], proj[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+    glGetFloatv(GL_PROJECTION_MATRIX, proj);
+
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_LIGHTING);
+
+    s_shader->use();
+    s_shader->setMatrix4("uModelView",  mv);
+    s_shader->setMatrix4("uProjection", proj);
+    s_shader->setFloat("uGridSize", static_cast<float>(se_GridSize()));
+    const eCoord& cp = cam->CameraPos();
+    s_shader->setVec2("uCamPos",    static_cast<float>(cp.x), static_cast<float>(cp.y));
+    s_shader->setVec3("uLineColor", 0.1f, 0.7f, 1.0f);  // neon cyan
+    s_shader->setFloat("uMaxDist",  static_cast<float>(se_GridSize()) * 14.f);
+
+    s_mesh->draw(GL_TRIANGLES);
+
+    glUseProgram(0);
+}
+#endif // HAVE_GLEW
+
 void eGrid::display_simple( eCamera* cam, int viewer,bool floor,
                             bool sr_upperSky,bool sr_lowerSky,
                             REAL flooralpha,
@@ -439,6 +542,12 @@ void eGrid::display_simple( eCamera* cam, int viewer,bool floor,
             break;
         case rFLOOR_GRID:
             {
+#ifdef HAVE_GLEW
+                if (sg_modernRenderer) {
+                    se_RenderModernFloor(cam);
+                    break;
+                }
+#endif
 	#define SIDELEN   (se_GridSize())
 	#define EXTENSION 10
 
