@@ -33,6 +33,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "rGL.h"
 #include "tLinkedList.h"
 
+#ifdef HAVE_GLEW
+#include <memory>
+namespace gl { class rGeometryCache; }
+#endif
+
 
 // Usage example for caching display elements:
 
@@ -111,6 +116,10 @@ private:
     GLuint list_;   //!< the display list
     int inhibit_;   //!< inhibit display list generation for a while
     bool filling_;  //!< set if we're just filling the list
+#ifdef HAVE_GLEW
+    //! modern-renderer geometry cache (used instead of list_ when sg_modernRenderer)
+    std::unique_ptr< gl::rGeometryCache > cache_;
+#endif
 #endif
 };
 

@@ -68,6 +68,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #ifndef DEDICATED
 #define DONTDOIT
 #include "rRender.h"
+#ifdef HAVE_GLEW
+#include "render/gl/gl_wall_instanced.h"
+#endif
 #endif
 
 // TODO: get rid of this
@@ -4248,27 +4251,36 @@ void gCycleWallsDisplayListManager::RenderAllWithDisplayList( eCamera const * ca
         return;
     }
 
+    // Bookkeeping helper shared by both paths below.
+    auto doBookkeeping = [&]() {
+        wallsWithDisplayListMinDistance_ = 1E+30;
+        wallsInDisplayList_ = 0;
+        run = wallsWithDisplayList_;
+        while ( run )
+        {
+            if ( run->BegPos() < wallsWithDisplayListMinDistance_ )
+                wallsWithDisplayListMinDistance_ = run->BegPos();
+            wallsInDisplayList_++;
+            run = run->Next();
+        }
+    };
+
+#if !defined(DEDICATED) && defined(HAVE_GLEW)
+    // Modern path: walls go through g_wallInstanced; skip the display list
+    // machinery entirely (the instanced VBO upload replaces it).
+    if ( sg_modernRenderer )
+    {
+        doBookkeeping();
+        RenderAll( camera, cycle, wallsWithDisplayList_ );
+        return;
+    }
+#endif
+
     // fill display list
     rDisplayListFiller filler( displayList_ );
 
     if ( rDisplayList::IsRecording() )
-    {
-        wallsWithDisplayListMinDistance_ = 1E+30;
-        wallsInDisplayList_ = 0;
-
-        // bookkeeping of walls in the display list
-        run = wallsWithDisplayList_;
-        while( run )
-        {
-            gNetPlayerWall * next = run->Next();
-            if ( run->BegPos() < wallsWithDisplayListMinDistance_ )
-            {
-                wallsWithDisplayListMinDistance_ = run->BegPos();
-            }
-            wallsInDisplayList_++;
-            run = next;
-        }
-    }
+        doBookkeeping();
 
     // render walls with display list
     RenderAll( camera, cycle, wallsWithDisplayList_ );
@@ -4285,7 +4297,7 @@ void gCycleWallsDisplayListManager::RenderAll( eCamera const * camera, gCycle * 
     sr_DepthOffset(true);
     if ( rTextureGroups::TextureMode[rTextureGroups::TEX_WALL] != 0 )
         glDisable(GL_TEXTURE_2D);
-    
+
     gNetPlayerWall * run = list;
     while( run )
     {
@@ -4295,10 +4307,16 @@ void gCycleWallsDisplayListManager::RenderAll( eCamera const * camera, gCycle * 
     }
 
     RenderEnd();
+
+#if !defined(DEDICATED) && defined(HAVE_GLEW)
+    if ( sg_modernRenderer )
+        gl::g_wallInstanced.flushLines();
+#endif
+
     sr_DepthOffset(false);
     if ( rTextureGroups::TextureMode[rTextureGroups::TEX_WALL] != 0 )
         glEnable(GL_TEXTURE_2D);
-    
+
     run = list;
     while( run )
     {
@@ -4308,6 +4326,15 @@ void gCycleWallsDisplayListManager::RenderAll( eCamera const * camera, gCycle * 
     }
 
     RenderEnd();
+
+#if !defined(DEDICATED) && defined(HAVE_GLEW)
+    if ( sg_modernRenderer )
+    {
+        GLint texID = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &texID);
+        gl::g_wallInstanced.flushQuads(static_cast<GLuint>(texID));
+    }
+#endif
 }
 
 void gCycleWallsDisplayListManager::RenderAll( eCamera const * camera, gCycle * cycle )
@@ -4386,15 +4413,28 @@ void gCycle::Render(const eCamera *cam){
         static GLfloat lighta[4] = { 1, .7, .7, 1 };
         static GLfloat lightb[4] = { .7, .7, 1, 1 };
 
-        glMaterialfv(GL_FRONT_AND_BACK,GL_SPECULAR,color);
-        glMaterialfv(GL_FRONT_AND_BACK,GL_DIFFUSE,color);
+        if ( sg_modernRenderer )
+        {
+            // GLSL renderer: feed the same two-light setup as uniforms.  Light
+            // positions are transformed to eye space by the renderer, matching
+            // glLightfv, so this must run with the same model-view as below.
+            renderer->Light( 0, true, lposa[0], lposa[1], lposa[2], lposa[3],
+                             lighta[0], lighta[1], lighta[2] );
+            renderer->Light( 1, true, lposb[0], lposb[1], lposb[2], lposb[3],
+                             lightb[0], lightb[1], lightb[2] );
+        }
+        else
+        {
+            glMaterialfv(GL_FRONT_AND_BACK,GL_SPECULAR,color);
+            glMaterialfv(GL_FRONT_AND_BACK,GL_DIFFUSE,color);
 
-        glLightfv(GL_LIGHT0, GL_DIFFUSE, lighta);
-        glLightfv(GL_LIGHT0, GL_SPECULAR, lighta);
-        glLightfv(GL_LIGHT0, GL_POSITION, lposa);
-        glLightfv(GL_LIGHT1, GL_DIFFUSE, lightb);
-        glLightfv(GL_LIGHT1, GL_SPECULAR, lightb);
-        glLightfv(GL_LIGHT1, GL_POSITION, lposb);
+            glLightfv(GL_LIGHT0, GL_DIFFUSE, lighta);
+            glLightfv(GL_LIGHT0, GL_SPECULAR, lighta);
+            glLightfv(GL_LIGHT0, GL_POSITION, lposa);
+            glLightfv(GL_LIGHT1, GL_DIFFUSE, lightb);
+            glLightfv(GL_LIGHT1, GL_SPECULAR, lightb);
+            glLightfv(GL_LIGHT1, GL_POSITION, lposb);
+        }
 
 
         ModelMatrix();
@@ -4428,9 +4468,16 @@ void gCycle::Render(const eCamera *cam){
         glMultMatrixf(&sk[0][0]);
 
 
-        glEnable(GL_LIGHT0);
-        glEnable(GL_LIGHT1);
-        glEnable(GL_LIGHTING);
+        if ( sg_modernRenderer )
+        {
+            renderer->Lighting( true );
+        }
+        else
+        {
+            glEnable(GL_LIGHT0);
+            glEnable(GL_LIGHT1);
+            glEnable(GL_LIGHTING);
+        }
 
 
 
@@ -4507,9 +4554,16 @@ void gCycle::Render(const eCamera *cam){
           glDisable(GL_TEXTURE_GEN_R);
         */
 
-        glDisable(GL_LIGHT0);
-        glDisable(GL_LIGHT1);
-        glDisable(GL_LIGHTING);
+        if ( sg_modernRenderer )
+        {
+            renderer->Lighting( false );
+        }
+        else
+        {
+            glDisable(GL_LIGHT0);
+            glDisable(GL_LIGHT1);
+            glDisable(GL_LIGHTING);
+        }
 
         //glDisable(GL_TEXTURE);
         glDisable(GL_TEXTURE_2D);

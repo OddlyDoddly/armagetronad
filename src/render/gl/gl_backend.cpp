@@ -27,6 +27,7 @@ of the License, or (at your option) any later version.
 #ifndef DEDICATED
 #ifdef HAVE_GLEW
 
+#include "gl_geometry_cache.h"
 #include "tConsole.h"
 #include <cstring>  // offsetof
 
@@ -41,17 +42,55 @@ static const char kBatchVert[] = R"GLSL(
 layout(location = 0) in vec4 aPos;
 layout(location = 1) in vec4 aColor;
 layout(location = 2) in vec4 aTexCoord;
+layout(location = 3) in vec3 aNormal;
 
 uniform mat4 uModelView;
 uniform mat4 uProjection;
+uniform mat3 uNormalMatrix;
 
 out vec4 vColor;
 out vec4 vTexCoord;
+out vec3 vEyePos;
+out vec3 vNormal;
 
 void main() {
     vColor    = aColor;
     vTexCoord = aTexCoord;
-    gl_Position = uProjection * uModelView * aPos;
+    vec4 eye  = uModelView * aPos;
+    vEyePos   = eye.xyz;
+    vNormal   = uNormalMatrix * aNormal;
+    gl_Position = uProjection * eye;
+}
+)GLSL";
+
+// Shared lighting block: two lights, diffuse + (white) specular, computed in
+// eye space.  Approximates the fixed-function two-light setup the cycle model
+// used (glLightfv).  Disabled lights contribute nothing.
+static const char kLightingGLSL[] = R"GLSL(
+uniform int  uLightingEnabled;
+uniform vec4 uLightPos[2];   // eye space; w==0 => directional
+uniform vec3 uLightColor[2]; // zero when the light is disabled
+
+vec3 applyLighting(vec3 base) {
+    if (uLightingEnabled == 0)
+        return base;
+
+    vec3 N = normalize(vNormal);
+    vec3 V = normalize(-vEyePos);
+    vec3 lit = base * 0.25; // ambient term so unlit faces aren't black
+
+    for (int i = 0; i < 2; ++i) {
+        vec3 L = (uLightPos[i].w == 0.0)
+               ? normalize(uLightPos[i].xyz)
+               : normalize(uLightPos[i].xyz - vEyePos);
+        float ndl = max(dot(N, L), 0.0);
+        lit += base * uLightColor[i] * ndl;
+
+        vec3 H = normalize(L + V);
+        float ndh = max(dot(N, H), 0.0);
+        lit += uLightColor[i] * pow(ndh, 16.0);
+    }
+    return lit;
 }
 )GLSL";
 
@@ -60,11 +99,17 @@ static const char kBatchColorFrag[] = R"GLSL(
 
 in vec4 vColor;
 in vec4 vTexCoord;
+in vec3 vEyePos;
+in vec3 vNormal;
 
 out vec4 fragColor;
+)GLSL"
+// lighting helper appended below
+;
 
+static const char kBatchColorFragMain[] = R"GLSL(
 void main() {
-    fragColor = vColor;
+    fragColor = vec4(applyLighting(vColor.rgb), vColor.a);
 }
 )GLSL";
 
@@ -73,19 +118,59 @@ static const char kBatchTexFrag[] = R"GLSL(
 
 in vec4 vColor;
 in vec4 vTexCoord;
+in vec3 vEyePos;
+in vec3 vNormal;
 
 uniform sampler2D uTexture;
 
 out vec4 fragColor;
+)GLSL"
+;
 
+static const char kBatchTexFragMain[] = R"GLSL(
 void main() {
     // Project texcoords (q-division), matching GL_MODULATE fixed-function behavior.
     vec2 tc = vTexCoord.xy / max(vTexCoord.w, 0.0001);
-    fragColor = texture(uTexture, tc) * vColor;
+    vec4 base = texture(uTexture, tc) * vColor;
+    fragColor = vec4(applyLighting(base.rgb), base.a);
 }
 )GLSL";
 
 // ---------------------------------------------------------------------------
+
+// Normal matrix = inverse-transpose of the upper-left 3x3 of the (column-major)
+// model-view matrix, written column-major for glUniformMatrix3fv.
+static void computeNormalMatrix(const float mv[16], float out[9]) {
+    const float a = mv[0], b = mv[1], c = mv[2];
+    const float d = mv[4], e = mv[5], f = mv[6];
+    const float g = mv[8], h = mv[9], i = mv[10];
+
+    const float A =  (e*i - f*h);
+    const float B = -(d*i - f*g);
+    const float C =  (d*h - e*g);
+    float det = a*A + b*B + c*C;
+
+    if (det == 0.f) {
+        // Degenerate: fall back to the plain rotation/scale part.
+        out[0]=a; out[1]=b; out[2]=c;
+        out[3]=d; out[4]=e; out[5]=f;
+        out[6]=g; out[7]=h; out[8]=i;
+        return;
+    }
+    const float invDet = 1.f / det;
+
+    // inverse = adjugate / det ; normal matrix = transpose(inverse).
+    // Columns of the transpose-of-inverse, laid out column-major.
+    out[0] = A * invDet;
+    out[1] = B * invDet;
+    out[2] = C * invDet;
+    out[3] = -(b*i - c*h) * invDet;
+    out[4] =  (a*i - c*g) * invDet;
+    out[5] = -(a*h - b*g) * invDet;
+    out[6] =  (b*f - c*e) * invDet;
+    out[7] = -(a*f - c*d) * invDet;
+    out[8] =  (a*e - b*d) * invDet;
+}
 
 namespace gl {
 
@@ -111,6 +196,10 @@ ModernGLRenderer::ModernGLRenderer() {
     glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(BatchVertex),
         reinterpret_cast<void*>(offsetof(BatchVertex, s)));
     glEnableVertexAttribArray(2);
+    // loc 3: normal xyz
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(BatchVertex),
+        reinterpret_cast<void*>(offsetof(BatchVertex, nx)));
+    glEnableVertexAttribArray(3);
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -134,7 +223,8 @@ bool ModernGLRenderer::IsSupported() {
 
 void ModernGLRenderer::ensureShaders() {
     if (!colorShader_) {
-        auto r = rShader::create(kBatchVert, kBatchColorFrag);
+        std::string frag = std::string(kBatchColorFrag) + kLightingGLSL + kBatchColorFragMain;
+        auto r = rShader::create(kBatchVert, frag.c_str());
         if (r) {
             colorShader_ = std::move(*r);
         } else {
@@ -142,7 +232,8 @@ void ModernGLRenderer::ensureShaders() {
         }
     }
     if (!texturedShader_) {
-        auto r = rShader::create(kBatchVert, kBatchTexFrag);
+        std::string frag = std::string(kBatchTexFrag) + kLightingGLSL + kBatchTexFragMain;
+        auto r = rShader::create(kBatchVert, frag.c_str());
         if (r) {
             texturedShader_ = std::move(*r);
         } else {
@@ -154,7 +245,8 @@ void ModernGLRenderer::ensureShaders() {
 void ModernGLRenderer::pushVert(float x, float y, float z, float w) {
     verts_.push_back({x, y, z, w,
                       curR_, curG_, curB_, curA_,
-                      curS_, curT_, curP_, curQ_});
+                      curS_, curT_, curP_, curQ_,
+                      curNx_, curNy_, curNz_});
 }
 
 void ModernGLRenderer::beginPrimitive(GLenum prim, bool forceEnd) {
@@ -190,6 +282,12 @@ void ModernGLRenderer::flush() {
     sh.use();
     sh.setMatrix4("uModelView",  mv);
     sh.setMatrix4("uProjection", proj);
+    float nrm[9];
+    computeNormalMatrix(mv, nrm);
+    GLint nrmLoc = sh.uniformLocation("uNormalMatrix");
+    if (nrmLoc >= 0)
+        glUniformMatrix3fv(nrmLoc, 1, GL_FALSE, nrm);
+    applyLighting(sh);
     if (boundTex != 0)
         glUniform1i(sh.uniformLocation("uTexture"), 0);
 
@@ -236,6 +334,18 @@ void ModernGLRenderer::flush() {
     }
 
     if (!drawVerts->empty()) {
+        // Record-and-execute: while a display list is recording, capture this
+        // segment (geometry + the GL state needed to reproduce it) so it can be
+        // replayed from a static VBO on subsequent frames.
+        if (recording_) {
+            recording_->append(drawPrim, drawVerts->data(), drawVerts->size(),
+                static_cast<GLuint>(boundTex),
+                glIsEnabled(GL_BLEND)                 == GL_TRUE,
+                glIsEnabled(GL_DEPTH_TEST)            == GL_TRUE,
+                glIsEnabled(GL_POLYGON_OFFSET_FILL)   == GL_TRUE,
+                lightingEnabled_);
+        }
+
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
         glBufferData(GL_ARRAY_BUFFER,
             static_cast<GLsizeiptr>(drawVerts->size()) * static_cast<GLsizeiptr>(sizeof(BatchVertex)),
@@ -274,11 +384,74 @@ void ModernGLRenderer::TexCoord(REAL u, REAL v, REAL w, REAL t) {
     curS_ = u; curT_ = v; curP_ = w; curQ_ = t;
 }
 
+void ModernGLRenderer::Normal(REAL x, REAL y, REAL z) {
+    curNx_ = x; curNy_ = y; curNz_ = z;
+}
+
 void ModernGLRenderer::Color(REAL r, REAL g, REAL b) {
     curR_ = r; curG_ = g; curB_ = b; curA_ = 1.f;
 }
 void ModernGLRenderer::Color(REAL r, REAL g, REAL b, REAL a) {
     curR_ = r; curG_ = g; curB_ = b; curA_ = a;
+}
+
+// ---------------------------------------------------------------------------
+// Lighting
+// ---------------------------------------------------------------------------
+
+void ModernGLRenderer::Lighting(bool on) {
+    // A change in lighting state must not retroactively affect already-batched
+    // geometry, so flush first.
+    if (lightingEnabled_ != on)
+        End(true);
+    lightingEnabled_ = on;
+}
+
+void ModernGLRenderer::Light(int index, bool enabled,
+                             REAL x, REAL y, REAL z, REAL w,
+                             REAL r, REAL g, REAL b) {
+    if (index < 0 || index >= kMaxLights)
+        return;
+
+    End(true);
+
+    LightState& L = lights_[index];
+    L.enabled = enabled;
+
+    // Transform the position/direction into eye space with the current
+    // model-view matrix, exactly as glLightfv(GL_POSITION) does.
+    float mv[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX, mv);
+    const float in[4] = { float(x), float(y), float(z), float(w) };
+    for (int row = 0; row < 4; ++row) {
+        // column-major mv: element(row, col) = mv[col*4 + row]
+        L.pos[row] = mv[0*4 + row] * in[0] + mv[1*4 + row] * in[1]
+                   + mv[2*4 + row] * in[2] + mv[3*4 + row] * in[3];
+    }
+
+    L.color[0] = enabled ? float(r) : 0.f;
+    L.color[1] = enabled ? float(g) : 0.f;
+    L.color[2] = enabled ? float(b) : 0.f;
+}
+
+void ModernGLRenderer::applyLighting(const rShader& sh) const {
+    glUniform1i(sh.uniformLocation("uLightingEnabled"), lightingEnabled_ ? 1 : 0);
+
+    GLint posLoc   = sh.uniformLocation("uLightPos");
+    GLint colorLoc = sh.uniformLocation("uLightColor");
+    float pos[kMaxLights * 4];
+    float col[kMaxLights * 3];
+    for (int i = 0; i < kMaxLights; ++i) {
+        pos[i*4+0] = lights_[i].pos[0];
+        pos[i*4+1] = lights_[i].pos[1];
+        pos[i*4+2] = lights_[i].pos[2];
+        pos[i*4+3] = lights_[i].pos[3];
+        col[i*3+0] = lights_[i].color[0];
+        col[i*3+1] = lights_[i].color[1];
+        col[i*3+2] = lights_[i].color[2];
+    }
+    if (posLoc   >= 0) glUniform4fv(posLoc,   kMaxLights, pos);
+    if (colorLoc >= 0) glUniform3fv(colorLoc, kMaxLights, col);
 }
 
 // ---------------------------------------------------------------------------
@@ -335,6 +508,117 @@ void ModernGLRenderer::ReallySetFlag(flag f, bool c) {
     default: return;
     }
     if (c) glEnable(fl); else glDisable(fl);
+}
+
+// ---------------------------------------------------------------------------
+// Geometry cache (display-list replacement)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+void setCap(GLenum cap, bool on) {
+    if (on) glEnable(cap); else glDisable(cap);
+}
+
+// Reproduce sr_DepthOffset(): the wall renderer enables polygon offset for the
+// depth-fighting line pass.  Mirror its exact glPolygonOffset parameters here.
+void setPolygonOffset(bool on) {
+    if (on) {
+        glPolygonOffset(-2, -5);
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glEnable(GL_POLYGON_OFFSET_LINE);
+        glEnable(GL_POLYGON_OFFSET_POINT);
+    } else {
+        glPolygonOffset(0, 0);
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        glDisable(GL_POLYGON_OFFSET_LINE);
+        glDisable(GL_POLYGON_OFFSET_POINT);
+    }
+}
+
+} // namespace
+
+void ModernGLRenderer::beginRecording(rGeometryCache& cache) {
+    // Flush any pending immediate-mode geometry so it isn't mixed into the cache.
+    End(true);
+    cache.beginRecord();
+    recording_ = &cache;
+}
+
+void ModernGLRenderer::endRecording() {
+    // Flush the final pending segment, then upload the cache to its static VBO.
+    End(true);
+    if (recording_) {
+        recording_->finalize();
+        recording_ = nullptr;
+    }
+}
+
+void ModernGLRenderer::replayCache(const rGeometryCache& cache) {
+    // Make sure no half-built immediate batch lingers.
+    End(true);
+
+    if (!cache.isValid())
+        return;
+
+    ensureShaders();
+    if (!colorShader_ || !texturedShader_)
+        return;
+
+    float mv[16], proj[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX,  mv);
+    glGetFloatv(GL_PROJECTION_MATRIX, proj);
+    float nrm[9];
+    computeNormalMatrix(mv, nrm);
+
+    // Preserve the surrounding fixed-function state we are about to touch.
+    GLint     prevTex   = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
+    GLboolean prevBlend = glIsEnabled(GL_BLEND);
+    GLboolean prevDepth = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean prevPoly  = glIsEnabled(GL_POLYGON_OFFSET_FILL);
+
+    cache.bindVAO();
+
+    // Lighting uniforms come from the renderer's *current* state (set fresh each
+    // frame before replay), so cached geometry is re-lit with up-to-date,
+    // camera-relative lights — matching how fixed-function lists behaved.
+    const bool savedLighting = lightingEnabled_;
+
+    for (const CacheSegment& seg : cache.segments()) {
+        const rShader& sh = (seg.texture != 0) ? *texturedShader_ : *colorShader_;
+        sh.use();
+        sh.setMatrix4("uModelView",  mv);
+        sh.setMatrix4("uProjection", proj);
+        GLint nrmLoc = sh.uniformLocation("uNormalMatrix");
+        if (nrmLoc >= 0)
+            glUniformMatrix3fv(nrmLoc, 1, GL_FALSE, nrm);
+
+        lightingEnabled_ = savedLighting && seg.lit;
+        applyLighting(sh);
+
+        if (seg.texture != 0) {
+            glBindTexture(GL_TEXTURE_2D, seg.texture);
+            glUniform1i(sh.uniformLocation("uTexture"), 0);
+        }
+
+        setCap(GL_BLEND,      seg.blend);
+        setCap(GL_DEPTH_TEST, seg.depthTest);
+        setPolygonOffset(seg.polygonOffset);
+
+        glDrawArrays(seg.prim, seg.first, seg.count);
+    }
+
+    lightingEnabled_ = savedLighting;
+
+    glBindVertexArray(0);
+
+    // Restore state.
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(prevTex));
+    setCap(GL_BLEND,      prevBlend == GL_TRUE);
+    setCap(GL_DEPTH_TEST, prevDepth == GL_TRUE);
+    setPolygonOffset(prevPoly == GL_TRUE);
+    glUseProgram(0);
 }
 
 } // namespace gl

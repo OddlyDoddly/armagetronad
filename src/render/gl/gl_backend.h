@@ -35,13 +35,17 @@ of the License, or (at your option) any later version.
 //   location 0: vec4 aPos      (xyzw)
 //   location 1: vec4 aColor    (rgba)
 //   location 2: vec4 aTexCoord (stpq — q for projective division)
+//   location 3: vec3 aNormal   (object-space, for GLSL lighting)
 struct BatchVertex {
     float x, y, z, w;
     float r, g, b, a;
     float s, t, p, q;
+    float nx, ny, nz;
 };
 
 namespace gl {
+
+class rGeometryCache;
 
 // Modern VAO/VBO batching renderer.  Implements the full rRenderer interface
 // using GLSL shaders instead of fixed-function immediate mode.
@@ -60,6 +64,16 @@ public:
     // Returns true when GL 3.3 + VAO support is available.
     static bool IsSupported();
 
+    // ---- Geometry cache (display-list replacement) ----
+
+    // While recording, every flush() additionally appends its post-tessellation
+    // segment to the given cache (record-and-execute: geometry is still drawn so
+    // the first frame is visible).  endRecording() uploads the cache to a static
+    // VBO; replayCache() draws it without re-batching on the CPU.
+    void beginRecording(rGeometryCache& cache);
+    void endRecording();
+    void replayCache(const rGeometryCache& cache);
+
     // ---- rRenderer interface ----
 
     void Vertex(REAL x, REAL y)                          override;
@@ -71,8 +85,15 @@ public:
     void TexCoord(REAL u, REAL v, REAL w)                override;
     void TexCoord(REAL u, REAL v, REAL w, REAL t)        override;
 
+    void Normal(REAL x, REAL y, REAL z)                  override;
+
     void Color(REAL r, REAL g, REAL b)                   override;
     void Color(REAL r, REAL g, REAL b, REAL a)           override;
+
+    void Lighting(bool on)                               override;
+    void Light(int index, bool enabled,
+               REAL x, REAL y, REAL z, REAL w,
+               REAL r, REAL g, REAL b)                   override;
 
     void End(bool force = true)                          override;
 
@@ -107,6 +128,22 @@ private:
 
     float curR_ = 1.f, curG_ = 1.f, curB_ = 1.f, curA_ = 1.f;
     float curS_ = 0.f, curT_ = 0.f, curP_ = 0.f, curQ_ = 1.f;
+    float curNx_ = 0.f, curNy_ = 0.f, curNz_ = 1.f;
+
+    // GLSL lighting state.  Light positions are stored in eye space (the
+    // current model-view transform is applied when Light() is called, exactly
+    // as glLightfv does), so the shader can use them directly.
+    static constexpr int kMaxLights = 2;
+    struct LightState {
+        bool  enabled = false;
+        float pos[4]  = {0, 0, 1, 0}; //!< eye-space; w==0 => directional
+        float color[3]= {1, 1, 1};
+    };
+    bool       lightingEnabled_ = false;
+    LightState lights_[kMaxLights];
+
+    // Apply the current lighting uniforms to an in-use shader.
+    void applyLighting(const rShader& sh) const;
 
     GLenum currentPrim_ = GL_FALSE;
     bool   forceEnd_    = false;
@@ -118,6 +155,9 @@ private:
 
     std::optional<rShader> colorShader_;
     std::optional<rShader> texturedShader_;
+
+    // Non-null while a geometry cache is being recorded.
+    rGeometryCache* recording_ = nullptr;
 };
 
 } // namespace gl
