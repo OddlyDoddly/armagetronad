@@ -27,6 +27,7 @@ of the License, or (at your option) any later version.
 #ifndef DEDICATED
 #ifdef HAVE_GLEW
 
+#include "gl_geometry_cache.h"
 #include "tConsole.h"
 #include <cstring>  // offsetof
 
@@ -236,6 +237,17 @@ void ModernGLRenderer::flush() {
     }
 
     if (!drawVerts->empty()) {
+        // Record-and-execute: while a display list is recording, capture this
+        // segment (geometry + the GL state needed to reproduce it) so it can be
+        // replayed from a static VBO on subsequent frames.
+        if (recording_) {
+            recording_->append(drawPrim, drawVerts->data(), drawVerts->size(),
+                static_cast<GLuint>(boundTex),
+                glIsEnabled(GL_BLEND)                 == GL_TRUE,
+                glIsEnabled(GL_DEPTH_TEST)            == GL_TRUE,
+                glIsEnabled(GL_POLYGON_OFFSET_FILL)   == GL_TRUE);
+        }
+
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
         glBufferData(GL_ARRAY_BUFFER,
             static_cast<GLsizeiptr>(drawVerts->size()) * static_cast<GLsizeiptr>(sizeof(BatchVertex)),
@@ -335,6 +347,101 @@ void ModernGLRenderer::ReallySetFlag(flag f, bool c) {
     default: return;
     }
     if (c) glEnable(fl); else glDisable(fl);
+}
+
+// ---------------------------------------------------------------------------
+// Geometry cache (display-list replacement)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+void setCap(GLenum cap, bool on) {
+    if (on) glEnable(cap); else glDisable(cap);
+}
+
+// Reproduce sr_DepthOffset(): the wall renderer enables polygon offset for the
+// depth-fighting line pass.  Mirror its exact glPolygonOffset parameters here.
+void setPolygonOffset(bool on) {
+    if (on) {
+        glPolygonOffset(-2, -5);
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glEnable(GL_POLYGON_OFFSET_LINE);
+        glEnable(GL_POLYGON_OFFSET_POINT);
+    } else {
+        glPolygonOffset(0, 0);
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        glDisable(GL_POLYGON_OFFSET_LINE);
+        glDisable(GL_POLYGON_OFFSET_POINT);
+    }
+}
+
+} // namespace
+
+void ModernGLRenderer::beginRecording(rGeometryCache& cache) {
+    // Flush any pending immediate-mode geometry so it isn't mixed into the cache.
+    End(true);
+    cache.beginRecord();
+    recording_ = &cache;
+}
+
+void ModernGLRenderer::endRecording() {
+    // Flush the final pending segment, then upload the cache to its static VBO.
+    End(true);
+    if (recording_) {
+        recording_->finalize();
+        recording_ = nullptr;
+    }
+}
+
+void ModernGLRenderer::replayCache(const rGeometryCache& cache) {
+    // Make sure no half-built immediate batch lingers.
+    End(true);
+
+    if (!cache.isValid())
+        return;
+
+    ensureShaders();
+    if (!colorShader_ || !texturedShader_)
+        return;
+
+    float mv[16], proj[16];
+    glGetFloatv(GL_MODELVIEW_MATRIX,  mv);
+    glGetFloatv(GL_PROJECTION_MATRIX, proj);
+
+    // Preserve the surrounding fixed-function state we are about to touch.
+    GLint     prevTex   = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
+    GLboolean prevBlend = glIsEnabled(GL_BLEND);
+    GLboolean prevDepth = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean prevPoly  = glIsEnabled(GL_POLYGON_OFFSET_FILL);
+
+    cache.bindVAO();
+
+    for (const CacheSegment& seg : cache.segments()) {
+        const rShader& sh = (seg.texture != 0) ? *texturedShader_ : *colorShader_;
+        sh.use();
+        sh.setMatrix4("uModelView",  mv);
+        sh.setMatrix4("uProjection", proj);
+        if (seg.texture != 0) {
+            glBindTexture(GL_TEXTURE_2D, seg.texture);
+            glUniform1i(sh.uniformLocation("uTexture"), 0);
+        }
+
+        setCap(GL_BLEND,      seg.blend);
+        setCap(GL_DEPTH_TEST, seg.depthTest);
+        setPolygonOffset(seg.polygonOffset);
+
+        glDrawArrays(seg.prim, seg.first, seg.count);
+    }
+
+    glBindVertexArray(0);
+
+    // Restore state.
+    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(prevTex));
+    setCap(GL_BLEND,      prevBlend == GL_TRUE);
+    setCap(GL_DEPTH_TEST, prevDepth == GL_TRUE);
+    setPolygonOffset(prevPoly == GL_TRUE);
+    glUseProgram(0);
 }
 
 } // namespace gl

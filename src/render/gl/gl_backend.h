@@ -43,6 +43,8 @@ struct BatchVertex {
 
 namespace gl {
 
+class rGeometryCache;
+
 // Modern VAO/VBO batching renderer.  Implements the full rRenderer interface
 // using GLSL shaders instead of fixed-function immediate mode.
 //
@@ -59,6 +61,16 @@ public:
 
     // Returns true when GL 3.3 + VAO support is available.
     static bool IsSupported();
+
+    // ---- Geometry cache (display-list replacement) ----
+
+    // While recording, every flush() additionally appends its post-tessellation
+    // segment to the given cache (record-and-execute: geometry is still drawn so
+    // the first frame is visible).  endRecording() uploads the cache to a static
+    // VBO; replayCache() draws it without re-batching on the CPU.
+    void beginRecording(rGeometryCache& cache);
+    void endRecording();
+    void replayCache(const rGeometryCache& cache);
 
     // ---- rRenderer interface ----
 
@@ -118,6 +130,9 @@ private:
 
     std::optional<rShader> colorShader_;
     std::optional<rShader> texturedShader_;
+
+    // Non-null while a geometry cache is being recorded.
+    rGeometryCache* recording_ = nullptr;
 };
 
 } // namespace gl

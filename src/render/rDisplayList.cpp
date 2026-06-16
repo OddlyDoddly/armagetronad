@@ -37,6 +37,19 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "rRender.h"
 
+#ifndef DEDICATED
+#ifdef HAVE_GLEW
+#include "gl/gl_backend.h"
+#include "gl/gl_geometry_cache.h"
+
+// When the modern renderer is active, the global renderer is a ModernGLRenderer.
+static gl::ModernGLRenderer * sr_modernRenderer()
+{
+    return sg_modernRenderer ? static_cast< gl::ModernGLRenderer * >( renderer ) : nullptr;
+}
+#endif
+#endif
+
 #ifdef LIST_STATS
 class rListCounter
 {
@@ -105,9 +118,38 @@ bool rDisplayList::OnCall()
 #ifndef DEDICATED
     tASSERT( !filling_ );
 
-    // Modern renderer manages its own VBO cache; GL display lists are unused.
+    // Modern renderer: replay the VAO/VBO geometry cache instead of a GL list.
     if ( sg_modernRenderer )
+    {
+#ifdef HAVE_GLEW
+        // abort previous glBegin block
+        RenderEnd();
+
+        // no playback while another list is recorded; gives us a chance to
+        // agglomerate primitives, matching the GL display-list behaviour.
+        if ( IsRecording() )
+            return false;
+
+        if ( inhibit_ > 0 )
+        {
+            if ( cache_ && cache_->isValid() )
+                Clear( 0 );
+            --inhibit_;
+            return false;
+        }
+
+        gl::ModernGLRenderer * mr = sr_modernRenderer();
+        if ( mr && cache_ && cache_->isValid() )
+        {
+#ifdef LIST_STATS
+            sr_counter.Count( rListCounter::Use );
+#endif
+            mr->replayCache( *cache_ );
+            return true;
+        }
+#endif
         return false;
+    }
 
     // abort previous glBegin block
     RenderEnd();
@@ -144,6 +186,28 @@ bool rDisplayList::OnCall()
 void rDisplayList::Clear( int inhibitGeneration )
 {
 #ifndef DEDICATED
+#ifdef HAVE_GLEW
+    // Modern renderer: invalidate the geometry cache instead of a GL list.
+    if ( sg_modernRenderer )
+    {
+        if ( !filling_ && cache_ )
+        {
+            cache_->reset();
+        }
+        else if ( cache_ && cache_->isValid() && inhibitGeneration < 1 )
+        {
+            // clear it later
+            inhibitGeneration = 1;
+        }
+
+        if ( inhibit_ < inhibitGeneration )
+        {
+            inhibit_ = inhibitGeneration;
+        }
+        return;
+    }
+#endif
+
     // clear the list
     if ( !filling_ && list_ )
     {
@@ -232,9 +296,41 @@ rDisplayListFiller::rDisplayListFiller( rDisplayList & list, bool respectBlackli
 void rDisplayListFiller::Start( bool respectBlacklist )
 {
 #ifndef DEDICATED
-    // Modern renderer skips GL display list recording entirely.
+#ifdef HAVE_GLEW
+    // Modern renderer: record the renderer's BatchVertex stream into a cache.
     if ( sg_modernRenderer )
+    {
+        gl::ModernGLRenderer * mr = sr_modernRenderer();
+
+        bool useList = sr_useDisplayLists != rDisplayList_Off && list_.inhibit_ == 0
+                       && !sr_currentFiller && mr;
+#ifndef DEBUG_X
+        if ( sr_blacklistDisplayLists && respectBlacklist )
+        {
+            useList = false;
+        }
+#endif
+
+        if ( useList )
+        {
+#ifdef LIST_STATS
+            sr_counter.Count( rListCounter::Create );
+#endif
+            if ( !list_.cache_ )
+            {
+                list_.cache_ = std::make_unique< gl::rGeometryCache >();
+            }
+            mr->beginRecording( *list_.cache_ );
+            list_.filling_   = true;
+            sr_currentFiller = this;
+        }
+        else if ( list_.inhibit_ > 0 )
+        {
+            --list_.inhibit_;
+        }
         return;
+    }
+#endif
 
     bool useList = sr_useDisplayLists != rDisplayList_Off && list_.inhibit_ == 0 && !sr_currentFiller;
 
@@ -283,6 +379,27 @@ rDisplayListFiller::~rDisplayListFiller()
 void rDisplayListFiller::Stop()
 {
 #ifndef DEDICATED
+#ifdef HAVE_GLEW
+    // Modern renderer: finalize the geometry cache (uploads to a static VBO).
+    if ( sg_modernRenderer )
+    {
+        if ( list_.filling_ )
+        {
+            tASSERT( sr_currentFiller == this );
+
+            gl::ModernGLRenderer * mr = sr_modernRenderer();
+            if ( mr )
+            {
+                mr->endRecording();
+            }
+
+            sr_currentFiller = 0;
+            list_.filling_   = false;
+        }
+        return;
+    }
+#endif
+
     if ( list_.filling_ )
     {
         tASSERT( list_.list_ );
