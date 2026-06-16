@@ -151,11 +151,11 @@ static void se_SelectUpperSky()
 // if the rip bug is activated, don't use the rim to draw the floor
 extern short se_bugRip;
 
-// passes a vertex with z-projected texture coordinates to OpenGL
+// passes a vertex with z-projected texture coordinates to the renderer
 static inline void TexVertex( REAL x, REAL y, REAL h)
 {
-    glTexCoord2f(x, y);
-    glVertex3f  (x, y, h);
+    TexCoord(x, y);
+    Vertex(x, y, h);
 }
 
 // renders a finite rectangle
@@ -225,24 +225,23 @@ static void infinity_xy_plane(eCoord const & pos, const eCoord &dir,REAL h=0){
 
         BeginTriangleFan();
 
-        glTexCoord4f(pos.x-dir.x, pos.y-dir.y, h, 1);
-        glVertex4f  (pos.x-dir.x, pos.y-dir.y, h, 1);
+        TexCoord(pos.x-dir.x, pos.y-dir.y, h, 1);
+        Vertex  (pos.x-dir.x, pos.y-dir.y, h, 1);
 
-        glTexCoord4f(1,0.1,zero*h,zero);
-        glVertex4f  (1,0.1,zero*h,zero);
+        TexCoord(1, 0.1f, zero*h, zero);
+        Vertex  (1, 0.1f, zero*h, zero);
 
-        glTexCoord4f(0.1,1.1,zero*h,zero);
-        glVertex4f  (0.1,1.1,zero*h,zero);
+        TexCoord(0.1f, 1.1f, zero*h, zero);
+        Vertex  (0.1f, 1.1f, zero*h, zero);
 
-        glTexCoord4f(-1,0.1,zero*h,zero);
-        glVertex4f  (-1,0.1,zero*h,zero);
+        TexCoord(-1, 0.1f, zero*h, zero);
+        Vertex  (-1, 0.1f, zero*h, zero);
 
+        TexCoord(0.1f, -1.1f, zero*h, zero);
+        Vertex  (0.1f, -1.1f, zero*h, zero);
 
-        glTexCoord4f(0.1,-1.1,zero*h,zero);
-        glVertex4f  (0.1,-1.1,zero*h,zero);
-
-        glTexCoord4f(1,0.1,zero*h,zero);
-        glVertex4f  (1,0.1,zero*h,zero);
+        TexCoord(1, 0.1f, zero*h, zero);
+        Vertex  (1, 0.1f, zero*h, zero);
 
         RenderEnd();
     }
@@ -354,7 +353,7 @@ void paint_sr_lowerSky(eGrid *grid, int viewer,bool sr_upperSky, eCamera* cam ){
         glBlendFunc(GL_SRC_ALPHA,GL_ZERO);
     }
     if (sa>0){
-        glColor4f(1,1,1,sa);
+        Color(1,1,1,sa);
         infinity_xy_plane(cam->CameraPos(),cam->CameraDir(),se_lowerSkyHeight);
     }
     if (!sr_upperSky && sr_alphaBlend)
@@ -500,7 +499,7 @@ void eGrid::display_simple( eCamera* cam, int viewer,bool floor,
             //glDisable(GL_TEXTURE);
             glDisable(GL_TEXTURE_2D);
 
-            glColor3f(0,0,0);
+            Color(0,0,0);
 
             if ( z < se_lowerSkyHeight )
                 infinity_xy_plane(cam->CameraPos(), cam->CameraDir(), se_lowerSkyHeight);
@@ -514,7 +513,7 @@ void eGrid::display_simple( eCamera* cam, int viewer,bool floor,
 
             se_SelectUpperSky();
 
-            glColor3f(se_upperSkyColorR,se_upperSkyColorG,se_upperSkyColorB);
+            Color(se_upperSkyColorR,se_upperSkyColorG,se_upperSkyColorB);
 
             if ( z < se_upperSkyHeight )
                 infinity_xy_plane(cam->CameraPos(), cam->CameraDir(), se_upperSkyHeight);
@@ -568,15 +567,15 @@ void eGrid::display_simple( eCamera* cam, int viewer,bool floor,
                     REAL intens=INTENSITY(i*SIDELEN,x);
                     if (intens<0) intens=0;
                     se_glFloorColor(intens,intens);
-                    glVertex2f(i*SIDELEN,y-SIDELEN*(EXTENSION+1));
-                    glVertex2f(i*SIDELEN,y+SIDELEN*(EXTENSION+1));
+                    Vertex(i*SIDELEN,y-SIDELEN*(EXTENSION+1));
+                    Vertex(i*SIDELEN,y+SIDELEN*(EXTENSION+1));
                 }
                 for(int j=yn-EXTENSION;j<=yn+EXTENSION;j++){
                     REAL intens=INTENSITY(j*SIDELEN,y);
                     if (intens<0) intens=0;
                     se_glFloorColor(intens,intens);
-                    glVertex2f(x-(EXTENSION+1)*SIDELEN,j*SIDELEN);
-                    glVertex2f(x+(EXTENSION+1)*SIDELEN,j*SIDELEN);
+                    Vertex(x-(EXTENSION+1)*SIDELEN,j*SIDELEN);
+                    Vertex(x+(EXTENSION+1)*SIDELEN,j*SIDELEN);
                 }
                 RenderEnd();
             }
@@ -743,24 +742,24 @@ void eGrid::display_simple( eCamera* cam, int viewer,bool floor,
         for(i=edges.Len()-1;i>=0;i--){
             eHalfEdge *e=edges[i];
             if (e->Face())
-                glColor4f(1,1,1,1);
+                Color(1,1,1,1);
             else
-                glColor4f(0,0,1,1);
+                Color(0,0,1,1);
 
-            glVertex3f(e->Point()->x,e->Point()->y,10);
-            glVertex3f(e->Point()->x,e->Point()->y,15);
-            glVertex3f(e->Point()->x,e->Point()->y,.1);
-            glVertex3f(e->other->Point()->x,e->other->Point()->y,.1);
-            glVertex3f(e->other->Point()->x,e->other->Point()->y,10);
-            glVertex3f(e->other->Point()->x,e->other->Point()->y,15);
+            Vertex(e->Point()->x,e->Point()->y,10);
+            Vertex(e->Point()->x,e->Point()->y,15);
+            Vertex(e->Point()->x,e->Point()->y,.1f);
+            Vertex(e->other->Point()->x,e->other->Point()->y,.1f);
+            Vertex(e->other->Point()->x,e->other->Point()->y,10);
+            Vertex(e->other->Point()->x,e->other->Point()->y,15);
 
         }
 
         for(i=points.Len()-1;i>=0;i--){
             ePoint *p=points[i];
-            glColor4f(1,0,0,1);
-            glVertex3f(p->x,p->y,0);
-            glVertex3f(p->x,p->y,(p->GetRefcount()+1)*5);
+            Color(1,0,0,1);
+            Vertex(p->x,p->y,0);
+            Vertex(p->x,p->y,(p->GetRefcount()+1)*5);
         }
         /*
         for(int i=sg_netPlayerWalls.Len()-1;i>=0;i--){

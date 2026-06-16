@@ -1063,7 +1063,7 @@ void gNetPlayerWall::RenderList(bool list, gWallRenderMode renderMode ){
 
 inline bool upperlinecolor(REAL r,REAL g,REAL b, REAL a){
     if (rTextureGroups::TextureMode[rTextureGroups::TEX_WALL]<0)
-        glColor4f(1,1,1,a);
+        Color(1,1,1,a);
     else{
         /*
           REAL upperline_alpha=fabs(se_cameraRise*2);
@@ -1072,10 +1072,10 @@ inline bool upperlinecolor(REAL r,REAL g,REAL b, REAL a){
           upperline_alpha=1;
           if (upperline_alpha<=.5)
           return false;
-          glColor4f(r,g,b,upperline_alpha);
+          Color(r,g,b,upperline_alpha);
         */
         //glDisable(GL_TEXTURE);
-        glColor4f(r,g,b,a);
+        Color(r,g,b,a);
     }
 
     return true;
@@ -1134,9 +1134,9 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
             BeginLines();
 
             upperlinecolor(r,g,b,a);
-            glVertex3f(p1.x,p1.y,h*hfrac);
+            Vertex(p1.x,p1.y,h*hfrac);
             upperlinecolor(r,g,b,a);
-            glVertex3f(p2.x,p2.y,h*hfrac);
+            Vertex(p2.x,p2.y,h*hfrac);
         }
 
         //glColor4f(r,g,b,a);
@@ -1154,21 +1154,21 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
         {
             BeginQuads();
 
-            glColor4f(r,g,b,1);
-            glTexCoord2f(ta,hfrac);
-            glVertex3f(p1.x,p1.y,extrarise);
-            
-            glColor4f(r,g,b,1);
-            glTexCoord2f(ta,0);
-            glVertex3f(p1.x,p1.y,extrarise + h*hfrac);
-            
-            glColor4f(r,g,b,1);
-            glTexCoord2f(te,0);
-            glVertex3f(p2.x,p2.y,extrarise + h*hfrac);
-            
-            glColor4f(r,g,b,1);
-            glTexCoord2f(te,hfrac);
-            glVertex3f(p2.x,p2.y,extrarise);
+            Color(r,g,b,1);
+            TexCoord(ta,hfrac);
+            Vertex(p1.x,p1.y,extrarise);
+
+            Color(r,g,b,1);
+            TexCoord(ta,0);
+            Vertex(p1.x,p1.y,extrarise + h*hfrac);
+
+            Color(r,g,b,1);
+            TexCoord(te,0);
+            Vertex(p2.x,p2.y,extrarise + h*hfrac);
+
+            Color(r,g,b,1);
+            TexCoord(te,hfrac);
+            Vertex(p2.x,p2.y,extrarise);
         }
     }
 }
@@ -1260,9 +1260,9 @@ void gNetPlayerWall::RenderBegin(const eCoord &p1,const eCoord &pp2,REAL ta,REAL
 
                 REAL H=h*hfrac*hfunc(rat);
                 upperlinecolor(r,g,b,a*afunc(rat));
-                glVertex3f(x+H*cycle_->skew*sfunc(rat)*cycle_->dir.y,
-                           y-H*cycle_->skew*sfunc(rat)*cycle_->dir.x,
-                           H);//+se_cameraZ*.005);
+                Vertex(x+H*cycle_->skew*sfunc(rat)*cycle_->dir.y,
+                       y-H*cycle_->skew*sfunc(rat)*cycle_->dir.x,
+                       H);
             }
         }
     }
@@ -1278,18 +1278,17 @@ void gNetPlayerWall::RenderBegin(const eCoord &p1,const eCoord &pp2,REAL ta,REAL
             REAL y=(p1.y+frag*(p2.y-p1.y))*(1-xfunc(rat))+ppos.y*xfunc(rat);
 
             // bottom
-            glColor4f(r+cfunc(rat),g+cfunc(rat),b+cfunc(rat),a*afunc(rat));
-            glTexCoord2f(ta+(te-ta)*frag,hfrac);
-            glVertex3f(x,y,0);
+            Color(r+cfunc(rat),g+cfunc(rat),b+cfunc(rat),a*afunc(rat));
+            TexCoord(ta+(te-ta)*frag,hfrac);
+            Vertex(x,y,0);
 
             // top
-            //glTexCoord2f(ta+(te-ta)*frag,hfrac*(1-hfunc(rat)));
-            glColor4f(r+cfunc(rat),g+cfunc(rat),b+cfunc(rat),a*afunc(rat));
-            glTexCoord2f(ta+(te-ta)*frag,0);
+            Color(r+cfunc(rat),g+cfunc(rat),b+cfunc(rat),a*afunc(rat));
+            TexCoord(ta+(te-ta)*frag,0);
             REAL H=h*hfrac*hfunc(rat);
-            glVertex3f(x+H*cycle_->skew*sfunc(rat)*cycle_->dir.y,
-                       y-H*cycle_->skew*sfunc(rat)*cycle_->dir.x,
-                       H);
+            Vertex(x+H*cycle_->skew*sfunc(rat)*cycle_->dir.y,
+                   y-H*cycle_->skew*sfunc(rat)*cycle_->dir.x,
+                   H);
         }
     }
 

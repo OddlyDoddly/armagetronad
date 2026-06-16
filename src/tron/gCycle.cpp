@@ -4446,7 +4446,7 @@ void gCycle::Render(const eCamera *cam){
             {
                 glPushMatrix();
                 customTexture->Select();
-                glColor3f(1,1,1);
+                Color(1,1,1);
                 customModel->Render();
                 glPopMatrix();
             }
@@ -4515,7 +4515,7 @@ void gCycle::Render(const eCamera *cam){
 
         //glDisable(GL_TEXTURE);
         glDisable(GL_TEXTURE_2D);
-        glColor3f(1,1,1);
+        Color(1,1,1);
 
         {
             bool renderPyramid = false;
@@ -4561,15 +4561,15 @@ void gCycle::Render(const eCamera *cam){
 
                 BeginTriangles();
 
-                glColor4f( colorPyramid.r_,colorPyramid.g_,colorPyramid.b_, alpha );
-                glVertex3f(0,0,3);
-                glVertex3f(0,1,4.5);
-                glVertex3f(0,-1,4.5);
+                Color( colorPyramid.r_,colorPyramid.g_,colorPyramid.b_, alpha );
+                Vertex(0,0,3);
+                Vertex(0,1,4.5f);
+                Vertex(0,-1,4.5f);
 
-                glColor4f( colorPyramid.r_ * .7f,colorPyramid.g_ * .7f,colorPyramid.b_ * .7f, alpha );
-                glVertex3f(0,0,3);
-                glVertex3f(1,0,4.5);
-                glVertex3f(-1,0,4.5);
+                Color( colorPyramid.r_ * .7f,colorPyramid.g_ * .7f,colorPyramid.b_ * .7f, alpha );
+                Vertex(0,0,3);
+                Vertex(1,0,4.5f);
+                Vertex(-1,0,4.5f);
 
                 RenderEnd();
 
@@ -4679,21 +4679,13 @@ void gCycle::Render(const eCamera *cam){
         glEnable(GL_CULL_FACE);
 
         if(!blinking && sr_floorDetail>rFLOOR_GRID && rTextureGroups::TextureMode[rTextureGroups::TEX_FLOOR]>0 && sr_alphaBlend){
-            glColor3f(0,0,0);
+            Color(0,0,0);
             cycle_shad.Select();
             BeginQuads();
-            glTexCoord2f(0,1);
-            glVertex3f(-.6,.4,h);
-
-            glTexCoord2f(1,1);
-            glVertex3f(-.6,-.4,h);
-
-            glTexCoord2f(1,0);
-            glVertex3f(2.1,-.4,h);
-
-            glTexCoord2f(0,0);
-            glVertex3f(2.1,.4,h);
-
+            TexCoord(0,1); Vertex(-.6f,.4f,h);
+            TexCoord(1,1); Vertex(-.6f,-.4f,h);
+            TexCoord(1,0); Vertex(2.1f,-.4f,h);
+            TexCoord(0,0); Vertex(2.1f,.4f,h);
             RenderEnd();
         }
 
@@ -4716,7 +4708,7 @@ void gCycle::Render(const eCamera *cam){
                 //&& owner!=::sn_myNetID){
                 glPushMatrix();
 
-                glColor3f(1,1,1);
+                Color(1,1,1);
                 //glDisable(GL_TEXTURE);
                 glDisable(GL_TEXTURE_2D);
 
@@ -4735,21 +4727,20 @@ void gCycle::Render(const eCamera *cam){
 
                 BeginLineLoop();
 
-
-                glVertex2f(-l,-l);
-                glVertex2f(0,0);
-                glVertex2f(-l,l);
+                Vertex(-l,-l);
+                Vertex(0,0);
+                Vertex(-l,l);
                 REAL delay = GetTurnDelay();
                 if(l> 2*delay){
-                    glVertex2f(-2*l+delay,delay);
-                    glVertex2f(-2*l+2*delay,0);
-                    glVertex2f(-2*l+delay,-delay);
+                    Vertex(-2*l+delay,delay);
+                    Vertex(-2*l+2*delay,0);
+                    Vertex(-2*l+delay,-delay);
                 }
                 else if (l>delay){
-                    glVertex2f(-2*l+delay,delay);
-                    glVertex2f(-l,2*delay-l);
-                    glVertex2f(-l,-(2*delay-l));
-                    glVertex2f(-2*l+delay,-delay);
+                    Vertex(-2*l+delay,delay);
+                    Vertex(-l,2*delay-l);
+                    Vertex(-l,-(2*delay-l));
+                    Vertex(-2*l+delay,-delay);
                 }
 
                 RenderEnd();
