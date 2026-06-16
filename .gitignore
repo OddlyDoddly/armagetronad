@@ -73,8 +73,14 @@ aa_config.h.in
 /build
 .objs_release
 desktop/armagetronad.protocol
+desktop/armagetronad.appdata.xml
+desktop/os-x/build_bundle.sh
 src/vParser.cpp
+src/tools/values/vParser.cpp
 src/protobuf/.dir
+
+# automake per-directory build stamps
+.dirstamp
 /armagetronad
 /armagetronad-dedicated
 /var
