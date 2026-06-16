@@ -699,6 +699,16 @@ AC_ARG_WITH(glew,
         test "${withval}" == "yes" || have_glew=false
 )
 
+dnl vulkan
+
+have_vulkan=false
+
+AC_ARG_WITH(vulkan,
+    AC_HELP_STRING([--with-vulkan],
+        [Build the experimental Vulkan rendering backend (requires the Vulkan SDK and glslangValidator)]),
+        test "${withval}" == "yes" && have_vulkan=true
+)
+
 dnl
 
 dnl testing a nifty make feature: silent inclu[]des
@@ -1192,6 +1202,40 @@ if test ${have_glew} = true; then
   have_glew=false
   )
 fi
+
+dnl *************************************************
+dnl         Vulkan
+dnl *************************************************
+
+if test ${have_vulkan} = true; then
+  AC_CHECK_LIB(vulkan,vkCreateInstance,,
+  AC_MSG_WARN([Vulkan loader (libvulkan) not found. Vulkan backend disabled.])
+  have_vulkan=false
+  )
+fi
+
+if test ${have_vulkan} = true; then
+  AC_CHECK_HEADERS([vulkan/vulkan.h],,
+  AC_MSG_WARN([Vulkan headers not found. Vulkan backend disabled.])
+  have_vulkan=false
+  )
+fi
+
+dnl GLSL -> SPIR-V compiler, needed to build the Vulkan shaders
+GLSLANG=""
+if test ${have_vulkan} = true; then
+  AC_CHECK_PROGS(GLSLANG, [glslangValidator glslc], [])
+  if test "x${GLSLANG}" = "x"; then
+    AC_MSG_WARN([No GLSL->SPIR-V compiler (glslangValidator/glslc) found. Vulkan backend disabled.])
+    have_vulkan=false
+  fi
+fi
+
+if test ${have_vulkan} = true; then
+  AC_DEFINE(HAVE_VULKAN, 1, [Define if the Vulkan rendering backend is available.])
+fi
+AC_SUBST(GLSLANG)
+AM_CONDITIONAL(HAVE_VULKAN, test ${have_vulkan} = true)
 
 dnl *************************************************
 dnl         libpng

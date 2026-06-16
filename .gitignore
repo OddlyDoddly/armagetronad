@@ -124,3 +124,6 @@ src/nTrueVersion.h
 .changetag
 fingerprint
 wget-log*
+
+# Generated Vulkan SPIR-V byte-code headers
+src/render/vk/*.spv.h
