@@ -43,6 +43,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 // #include "../network/nNetwork.h"
     #include "rGL.h"
     #include "rSDL.h"
+    #ifdef HAVE_VULKAN
+    #include <SDL_vulkan.h>
+    // Selects the Vulkan window/backend; declared in rRender.h, externed here to
+    // avoid rRender.h's glBegin/glEnd-disabling macros leaking into this TU.
+    extern bool sg_vulkanRenderer;
+    #endif
 
     #ifdef POWERPAK_DEB
     #include <PowerPak/powerdraw>
@@ -735,6 +741,12 @@ static bool lowlevel_sr_InitDisplay(){
 
         int attrib=SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
 
+#ifdef HAVE_VULKAN
+        // A Vulkan window must not request a GL context.
+        if (sg_vulkanRenderer)
+            attrib = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+#endif
+
         if(highDPI)
         {
             attrib |= SDL_WINDOW_ALLOW_HIGHDPI;
@@ -955,6 +967,14 @@ static bool lowlevel_sr_InitDisplay(){
         }
     }
 
+#ifdef HAVE_VULKAN
+    if (sg_vulkanRenderer)
+    {
+        // Vulkan manages its own device/swapchain (created in sr_glRendererInit);
+        // there is no GL context to create here.
+    }
+    else
+#endif
     {
         static SDL_Window *lastScreen = NULL;
         if(lastScreen != sr_screen)

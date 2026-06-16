@@ -120,6 +120,13 @@ protected:
 
 extern rRenderer *renderer;
 extern bool sg_modernRenderer;
+//! when true, the experimental Vulkan backend is used instead of OpenGL
+extern bool sg_vulkanRenderer;
+
+//! per-frame hooks for the Vulkan backend (no-ops unless Vulkan is active).
+//! Defined in vk/vk_renderer.cpp; only linked when HAVE_VULKAN.
+void sr_vkBeginFrame();
+void sr_vkEndFrame();
 
 inline void Vertex(REAL x, REAL y){
     renderer->Vertex(x,y);

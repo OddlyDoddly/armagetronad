@@ -49,6 +49,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "rTextureRenderTarget.h"
 #include <memory>
 
+#ifdef HAVE_VULKAN
+// Declared in rRender.h / vk_renderer.cpp; declared locally here to avoid
+// pulling in rRender.h's glBegin/glEnd-disabling macros into this TU.
+extern bool sg_vulkanRenderer;
+void sr_vkBeginFrame();
+void sr_vkEndFrame();
+#endif
+
 #ifndef DEDICATED
 #include "SDL_thread.h"
 #include "SDL_mutex.h"
@@ -661,6 +669,14 @@ public:
         // do the actual buffer swap.
         if( reallyDoIt )
         {
+#ifdef HAVE_VULKAN
+            if( sg_vulkanRenderer )
+            {
+                // Vulkan submits + presents the frame here instead of a GL swap.
+                sr_vkEndFrame();
+            }
+            else
+#endif
 #if SDL_VERSION_ATLEAST(2,0,0)
             SDL_GL_SwapWindow(sr_screen);
 #else
@@ -1585,6 +1601,15 @@ void sr_UnlockSDL(){
 
 #ifndef DEDICATED
 void  rSysDep::ClearGL(){
+#ifdef HAVE_VULKAN
+    if (sg_vulkanRenderer)
+    {
+        // Vulkan begins the frame (and clears) by starting the render pass.
+        sr_vkBeginFrame();
+        sr_needClear = true;
+        return;
+    }
+#endif
     if (sr_glOut && sr_needClear )
     {
         glClearColor(0.0,0.0,0.0,1.0);

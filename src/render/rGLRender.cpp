@@ -29,6 +29,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 // sg_modernRenderer is defined here and declared extern in rRender.h.
 bool sg_modernRenderer = false;
+// sg_vulkanRenderer selects the experimental Vulkan backend (HAVE_VULKAN only).
+bool sg_vulkanRenderer = false;
 
 #ifndef DEDICATED
 
@@ -41,8 +43,15 @@ bool sg_modernRenderer = false;
 #ifdef HAVE_GLEW
 #include "gl/gl_backend.h"
 #endif
+#ifdef HAVE_VULKAN
+#include "vk/vk_renderer.h"
+#include "rScreen.h"
+#endif
 
 static tSettingItem<bool> sg_modernRendererConf("MODERN_RENDERER", sg_modernRenderer);
+#ifdef HAVE_VULKAN
+static tSettingItem<bool> sg_vulkanRendererConf("VULKAN_RENDERER", sg_vulkanRenderer);
+#endif
 
 class glRenderer: public rRenderer{
     GLenum lastPrimitive;
@@ -262,6 +271,19 @@ public:
 };
 
 void sr_glRendererInit(){
+#ifdef HAVE_VULKAN
+    if (sg_vulkanRenderer && vk::VulkanRenderer::IsSupported()) {
+        vk::VulkanRenderer * vr = new vk::VulkanRenderer();
+        if (vr->init(sr_screen)) {
+            return;
+        }
+        // init failed: the Vulkan-flagged window cannot host a GL context, so
+        // this is effectively fatal, but tear down cleanly and fall through.
+        delete vr;
+        renderer = nullptr;
+        sg_vulkanRenderer = false;
+    }
+#endif
 #ifdef HAVE_GLEW
     if (sg_modernRenderer && gl::ModernGLRenderer::IsSupported()) {
         new gl::ModernGLRenderer();
