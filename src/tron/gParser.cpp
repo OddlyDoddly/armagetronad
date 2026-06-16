@@ -1779,7 +1779,7 @@ gParser::parseBuilding(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
     // blocks cycles now) and record it on the world (footprint + height + style)
     // for the renderer to extrude into a Tron-Legacy block.
     eBuilding building;
-    building.height = myxmlGetPropFloat( cur, "height" );
+    building.height = myxmlGetPropFloat( cur, "height" ) * sizeMultiplier;
     building.level  = sg_ParseLevel( myxmlGetProp( cur, "level" ).Get() );
     {
         char const * style = myxmlGetProp( cur, "style" ).Get();
@@ -1805,7 +1805,8 @@ gParser::parseBuilding(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
             }
             else
             {
-                R = this->DrawRim( grid, R, c );
+                // extrude the footprint side walls to the building's height
+                R = this->DrawRim( grid, R, c, building.height );
             }
             any = true;
         }
@@ -1813,7 +1814,7 @@ gParser::parseBuilding(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
     }
 
     if ( any && R != NULL )
-        this->DrawRim( grid, R, firstCoord );
+        this->DrawRim( grid, R, firstCoord, building.height );
 
     if ( any )
         theWorld_->AddBuilding( building );

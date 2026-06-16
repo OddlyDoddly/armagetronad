@@ -53,6 +53,7 @@ layout(location = 2) in vec4 aEndpoints;    // p1x, p1y, p2x, p2y
 layout(location = 3) in vec2 aTexRange;     // ta, te
 layout(location = 4) in vec4 aColor;        // r, g, b, a
 layout(location = 5) in vec2 aHeights;      // h, hfrac
+layout(location = 6) in float aZBase;       // surface base height (surface-graph)
 
 uniform mat4 uModelView;
 uniform mat4 uProjection;
@@ -66,7 +67,7 @@ void main() {
 
     vec2 pos2d = mix(aEndpoints.xy, aEndpoints.zw, side);
     float wallH = aHeights.x * aHeights.y;  // h * hfrac
-    float z = up * wallH;                   // 0 at bottom, wallH at top
+    float z = aZBase + up * wallH;          // surface height at bottom, + wallH at top
 
     float tx = mix(aTexRange.x, aTexRange.y, side);
     float ty = (up == 0.0) ? aHeights.y : 0.0;  // hfrac at bottom, 0 at top
@@ -177,6 +178,12 @@ static void setInstanceAttribs(GLuint instanceVBO) {
         reinterpret_cast<void*>(offsetof(WallInstance, h)));
     glEnableVertexAttribArray(5);
     glVertexAttribDivisor(5, 1);
+
+    // loc 6: float aZBase (surface base height)
+    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(WallInstance),
+        reinterpret_cast<void*>(offsetof(WallInstance, zbase)));
+    glEnableVertexAttribArray(6);
+    glVertexAttribDivisor(6, 1);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }

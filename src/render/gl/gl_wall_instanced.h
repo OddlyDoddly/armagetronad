@@ -34,6 +34,7 @@ struct WallInstance {
     float ta,  te;    // texcoord U at p1 / p2
     float r, g, b, a; // color (a applied to lines only; quads use a=1)
     float h, hfrac;   // wall height scale and fractional height (death fade)
+    float zbase = 0;  // base height of the wall's surface (surface-graph; 0 == ground)
 };
 
 namespace gl {

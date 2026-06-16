@@ -1161,6 +1161,7 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
             inst.p2x = p2.x; inst.p2y = p2.y;
             inst.ta = ta;    inst.te = te;
             inst.h = h; inst.hfrac = hfrac;
+            inst.zbase = zbase; // surface-graph: draw at the wall's surface height
             // Mirror upperlinecolor(): in wireframe texture mode use white lines.
             if ( rTextureGroups::TextureMode[rTextureGroups::TEX_WALL] < 0 )
                 inst.r = inst.g = inst.b = 1.f;
