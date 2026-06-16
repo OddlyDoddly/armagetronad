@@ -54,8 +54,19 @@ public:
     virtual void TexVertex(REAL x, REAL y, REAL z,
                            REAL u, REAL v);
 
+    //! current vertex normal (used by GLSL lighting; no-op for fixed-function)
+    virtual void Normal(REAL x, REAL y, REAL z);
+
     virtual void Color(REAL r, REAL g, REAL b)        = 0;
     virtual void Color(REAL r, REAL g, REAL b,REAL a) = 0;
+
+    //! enable/disable GLSL lighting for subsequent geometry (no-op for fixed-function)
+    virtual void Lighting(bool on);
+    //! configure light \a index (eye-space transform applied like glLightfv);
+    //! w==0 selects a directional light. No-op for fixed-function.
+    virtual void Light(int index, bool enabled,
+                       REAL x, REAL y, REAL z, REAL w,
+                       REAL r, REAL g, REAL b);
 
     virtual void End(bool force=true)   = 0;
 
@@ -141,6 +152,10 @@ inline void TexCoord(REAL u, REAL v, REAL w, REAL t){
 inline void TexVertex(REAL x, REAL y, REAL z,
                       REAL u, REAL v){
     renderer->TexVertex(x,y,z,u,v);
+}
+
+inline void Normal(REAL x, REAL y, REAL z){
+    renderer->Normal(x,y,z);
 }
 
 inline void Color(REAL r, REAL g, REAL b){

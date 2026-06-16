@@ -57,6 +57,9 @@ void rGeometryCache::ensureObjects() {
     glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(BatchVertex),
         reinterpret_cast<void*>(offsetof(BatchVertex, s)));
     glEnableVertexAttribArray(2);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(BatchVertex),
+        reinterpret_cast<void*>(offsetof(BatchVertex, nx)));
+    glEnableVertexAttribArray(3);
 
     glBindVertexArray(0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -70,7 +73,8 @@ void rGeometryCache::beginRecord() {
 }
 
 void rGeometryCache::append(GLenum prim, const BatchVertex* data, std::size_t count,
-                            GLuint texture, bool blend, bool depthTest, bool polygonOffset) {
+                            GLuint texture, bool blend, bool depthTest, bool polygonOffset,
+                            bool lit) {
     if (!recording_ || count == 0)
         return;
 
@@ -82,6 +86,7 @@ void rGeometryCache::append(GLenum prim, const BatchVertex* data, std::size_t co
     seg.blend         = blend;
     seg.depthTest     = depthTest;
     seg.polygonOffset = polygonOffset;
+    seg.lit           = lit;
 
     pending_.insert(pending_.end(), data, data + count);
     segments_.push_back(seg);

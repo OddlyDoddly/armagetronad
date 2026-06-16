@@ -273,6 +273,46 @@ void rModel::Render(){
         // model display lists should definitely be compiled before other lists
         rDisplayList::Cancel();
 
+#ifdef HAVE_GLEW
+        if ( sg_modernRenderer )
+        {
+            // GLSL renderer: emit per-vertex through the batching renderer so
+            // the geometry (with normals) is cached and lit by the shader.
+            rDisplayListFiller filler( displayList_, false );
+            glEnable(GL_CULL_FACE);
+
+            bool haveNormals = normals.Len() > 0;
+            bool haveTex     = texVert.Len() > 0;
+            bool useTexFaces = haveTex && modelTexFaces.Len() == modelFaces.Len();
+
+            BeginTriangles();
+            for ( int i = modelFaces.Len()-1; i >= 0; i-- )
+            {
+                for ( int j = 0; j <= 2; j++ )
+                {
+                    int vidx = modelFaces(i).A[j];
+                    if ( haveTex )
+                    {
+                        int tidx = useTexFaces ? modelTexFaces(i).A[j] : vidx;
+                        float * t = texVert(tidx).x;
+                        TexCoord( t[0], t[1], t[2] );
+                    }
+                    if ( haveNormals )
+                    {
+                        float * n = normals(vidx).x;
+                        Normal( n[0], n[1], n[2] );
+                    }
+                    float * v = vertices(vidx).x;
+                    Vertex( v[0], v[1], v[2] );
+                }
+            }
+            RenderEnd();
+
+            glDisable(GL_CULL_FACE);
+            return;
+        }
+#endif
+
         bool texcoord=true;
         if (texVert.Len()<0)
             texcoord=false;

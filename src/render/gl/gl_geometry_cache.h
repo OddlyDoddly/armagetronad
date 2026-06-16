@@ -42,6 +42,7 @@ struct CacheSegment {
     bool    blend         = false;        //!< GL_BLEND enabled
     bool    depthTest     = true;         //!< GL_DEPTH_TEST enabled
     bool    polygonOffset = false;        //!< GL_POLYGON_OFFSET_FILL enabled
+    bool    lit           = false;        //!< GLSL lighting enabled at record time
 };
 
 // VAO/VBO-backed replacement for a GL display list.  The modern renderer
@@ -63,7 +64,8 @@ public:
     //! Append one drawable segment (vertices already tessellated to a
     //! GL 3.3-core primitive) together with the render-state to reproduce.
     void append(GLenum prim, const BatchVertex* data, std::size_t count,
-                GLuint texture, bool blend, bool depthTest, bool polygonOffset);
+                GLuint texture, bool blend, bool depthTest, bool polygonOffset,
+                bool lit);
 
     //! Upload the accumulated vertices to the static VBO and build the VAO.
     void finalize();

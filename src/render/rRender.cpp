@@ -69,6 +69,18 @@ void rRenderer::Line(REAL x1, REAL y1, REAL z1,
     Vertex(x2,y2,z2);
 }
 
+// Lighting / normals are only meaningful for the GLSL renderer; the
+// fixed-function path drives glNormal/glLight directly, so these default
+// to no-ops.
+void rRenderer::Normal(REAL, REAL, REAL){
+}
+
+void rRenderer::Lighting(bool){
+}
+
+void rRenderer::Light(int, bool, REAL, REAL, REAL, REAL, REAL, REAL, REAL){
+}
+
 void rRenderer::SetFlag(flag f, bool c)
 {
     ReallySetFlag(f, c);
