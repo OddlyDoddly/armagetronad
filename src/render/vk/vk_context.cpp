@@ -134,16 +134,26 @@ bool VulkanContext::pickPhysicalDevice() {
             physical_ = dev;
             graphicsQueueFamily_ = gfx;
             presentQueueFamily_  = present;
+            captureDeviceInfo(props);
             return true;
         }
     }
 
     if (fallback != VK_NULL_HANDLE) {
         physical_ = fallback;
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(physical_, &props);
+        captureDeviceInfo(props);
         return true;
     }
     con << "Vulkan: no suitable device with graphics+present\n";
     return false;
+}
+
+void VulkanContext::captureDeviceInfo(const VkPhysicalDeviceProperties& props) {
+    deviceName_ = props.deviceName;
+    apiVersion_ = props.apiVersion;
+    driverVersion_ = props.driverVersion;
 }
 
 bool VulkanContext::createLogicalDevice() {

@@ -377,6 +377,20 @@ void uMenu::OnEnter(){
                           ,text_height*titlefac,
                           title,sr_fontMenuTitle,0);
 
+            // Renderer overlay: shows which backend is active in the lower-left
+            // corner, with extra device info appended when --gfx-dbg is passed.
+            {
+                tColoredString rendererLine;
+                rendererLine << "gfx: " << sg_rendererName;
+                if (sg_gfxDebug && !sg_rendererDebugInfo.empty())
+                    rendererLine << "  " << sg_rendererDebugInfo;
+
+                Color(.7,.7,.7,.7);
+                ::DisplayText(-.99f, -.98f, rCHEIGHT_NORMAL*.6f,
+                              rendererLine.c_str(),
+                              sr_fontMenuHelp, -1);
+            }
+
             glDisable(GL_TEXTURE_2D);
             //glDisable(GL_TEXTURE);
             Color(1,.2,.2,.5);

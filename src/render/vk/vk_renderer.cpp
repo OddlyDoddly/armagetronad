@@ -27,6 +27,7 @@ of the License, or (at your option) any later version.
 
 #include <cstddef>
 #include <cstring>
+#include <sstream>
 
 // SPIR-V bytecode generated from shaders/batch.{vert,frag} at build time
 // (glslangValidator --vn).  See Makefile.am for the rule.
@@ -329,6 +330,17 @@ bool VulkanRenderer::init(SDL_Window* window) {
     if (!createDefaultTexture()){ con << "Vulkan: default texture failed\n"; return false; }
     ready_ = true;
     return true;
+}
+
+tString VulkanRenderer::debugInfo() const {
+    std::ostringstream s;
+    s << "device: "      << ctx_.deviceName()
+      << "  api: "        << VK_API_VERSION_MAJOR(ctx_.apiVersion())  << '.'
+                           << VK_API_VERSION_MINOR(ctx_.apiVersion())  << '.'
+                           << VK_API_VERSION_PATCH(ctx_.apiVersion())
+      << "  driver: "     << ctx_.driverVersion()
+      << "  swapfmt: "    << ctx_.swapchainFormat();
+    return tString(s.str().c_str());
 }
 
 // ---------------------------------------------------------------------------

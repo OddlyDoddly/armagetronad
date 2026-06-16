@@ -58,6 +58,9 @@ public:
     // Bring up the Vulkan device against the (Vulkan-capable) SDL window.
     bool init(SDL_Window* window);
 
+    // Human-readable device/API info for the --gfx-dbg overlay.
+    tString debugInfo() const;
+
     // Frame hooks driven by the engine's existing clear/swap sites.
     void beginFrame();
     void endFrame();

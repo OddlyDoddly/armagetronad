@@ -26,6 +26,7 @@ of the License, or (at your option) any later version.
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <cstdint>
+#include <string>
 
 struct SDL_Window;
 
@@ -70,6 +71,12 @@ public:
     uint32_t         frameIndex()    const { return currentFrame_; }
     static constexpr uint32_t kFramesInFlight = 2;
 
+    // ---- Debug info (for the --gfx-dbg overlay) ----
+    const std::string& deviceName()    const { return deviceName_; }
+    uint32_t            apiVersion()    const { return apiVersion_; }
+    uint32_t            driverVersion() const { return driverVersion_; }
+    VkFormat             swapchainFormat() const { return swapchainFormat_; }
+
     // ---- Resource helpers ----
     uint32_t findMemoryType(uint32_t typeBits, VkMemoryPropertyFlags props) const;
 
@@ -86,6 +93,7 @@ private:
     bool createInstance();
     bool createSurface(SDL_Window* window);
     bool pickPhysicalDevice();
+    void captureDeviceInfo(const VkPhysicalDeviceProperties& props);
     bool createLogicalDevice();
     bool createSwapchain();
     bool createImageViews();
@@ -104,6 +112,10 @@ private:
     VkSurfaceKHR     surface_  = VK_NULL_HANDLE;
     VkPhysicalDevice physical_ = VK_NULL_HANDLE;
     VkDevice         device_   = VK_NULL_HANDLE;
+
+    std::string      deviceName_;
+    uint32_t         apiVersion_    = 0;
+    uint32_t         driverVersion_ = 0;
 
     uint32_t         graphicsQueueFamily_ = 0;
     uint32_t         presentQueueFamily_  = 0;
