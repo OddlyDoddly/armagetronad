@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #include "defs.h"
 #include "rGL.h"
+#include "tString.h"
 
 #ifndef DONTDOIT
 #define glBegin        #error glBegin disabled
@@ -122,6 +123,15 @@ extern rRenderer *renderer;
 extern bool sg_modernRenderer;
 //! when true, the experimental Vulkan backend is used instead of OpenGL
 extern bool sg_vulkanRenderer;
+
+//! human-readable name of the renderer backend that actually ended up active
+//! ("Legacy GL", "Modern GL", or "Vulkan"); set once in sr_glRendererInit().
+extern tString sg_rendererName;
+//! extra per-backend debug info (e.g. Vulkan device name/API version);
+//! only populated when --gfx-dbg was passed on the command line.
+extern tString sg_rendererDebugInfo;
+//! true if --gfx-dbg was passed on the command line
+extern bool sg_gfxDebug;
 
 //! per-frame hooks for the Vulkan backend (no-ops unless Vulkan is active).
 //! Defined in vk/vk_renderer.cpp; only linked when HAVE_VULKAN.

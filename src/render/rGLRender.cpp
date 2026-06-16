@@ -26,11 +26,42 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 
 #include "aa_config.h"
+#include "tString.h"
+#include "tCommandLine.h"
 
 // sg_modernRenderer is defined here and declared extern in rRender.h.
 bool sg_modernRenderer = false;
 // sg_vulkanRenderer selects the experimental Vulkan backend (HAVE_VULKAN only).
 bool sg_vulkanRenderer = false;
+
+tString sg_rendererName = tString("Legacy GL");
+tString sg_rendererDebugInfo;
+bool    sg_gfxDebug = false;
+
+// --gfx-dbg: show renderer backend + device info in the corner of the menu.
+class gGfxDebugCommandLineAnalyzer: public tCommandLineAnalyzer
+{
+private:
+    bool DoAnalyze( tCommandLineParser & parser, int pass ) override
+    {
+        if (pass > 0)
+            return false;
+
+        if ( parser.GetSwitch( "--gfx-dbg", nullptr ) )
+        {
+            sg_gfxDebug = true;
+            return true;
+        }
+        return false;
+    }
+
+    void DoHelp( std::ostream & s ) override
+    {
+        s << "--gfx-dbg                    : show the active graphics renderer and\n"
+          << "                               device debug info in the menu corner\n";
+    }
+};
+static gGfxDebugCommandLineAnalyzer s_gfxDebugAnalyzer;
 
 #ifndef DEDICATED
 
@@ -275,6 +306,9 @@ void sr_glRendererInit(){
     if (sg_vulkanRenderer && vk::VulkanRenderer::IsSupported()) {
         vk::VulkanRenderer * vr = new vk::VulkanRenderer();
         if (vr->init(sr_screen)) {
+            sg_rendererName = tString("Vulkan");
+            if (sg_gfxDebug)
+                sg_rendererDebugInfo = vr->debugInfo();
             return;
         }
         // init failed: the Vulkan-flagged window cannot host a GL context, so
@@ -287,9 +321,11 @@ void sr_glRendererInit(){
 #ifdef HAVE_GLEW
     if (sg_modernRenderer && gl::ModernGLRenderer::IsSupported()) {
         new gl::ModernGLRenderer();
+        sg_rendererName = tString("Modern GL");
         return;
     }
 #endif
+    sg_rendererName = tString("Legacy GL");
     tNEW(glRenderer);
 }
 
