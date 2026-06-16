@@ -292,7 +292,7 @@ void gTextureCycle::OnSelect(bool enforce){
             G*=.7;
             B*=.7;
         }
-        glColor3f(R,G,B);
+        Color(R,G,B);
         GLfloat color[4]={R,G,B,1};
 
         glMaterialfv(GL_FRONT_AND_BACK,GL_SPECULAR,color);
@@ -4003,7 +4003,7 @@ public:
             cp[i] = (1 - factor) * cp[i] + factor * target.cp[i];
         }
     }
-    void toGl() const { glColor3f(cp[0], cp[1], cp[2]); }
+    void toRenderer() const { Color(cp[0], cp[1], cp[2]); }
 
     static const Colour white;
     static const Colour black;
@@ -4050,23 +4050,23 @@ bool LagOMeterRenderer::drawTriangle(eCoord loc, int winding, REAL lag, int inc)
         eCoord oldOuter = loc + directions.get(winding - inc) * lag;
         eCoord d = outer - oldOuter;
         outer = oldOuter + d * (-oldOuter.y / d.y);
-        glVertex2f(outer.x, outer.y);
+        Vertex(outer.x, outer.y);
         return true;
     } else {
-        glVertex2f(outer.x, outer.y);
+        Vertex(outer.x, outer.y);
         if (lag > delay) {
             if (drawTriangle(loc + directions.get(winding + inc) * delay, winding + inc, lag - delay, inc)) return true;
         } else {
             outer = loc + directions.get(winding + inc) * lag;
-            glVertex2f(outer.x, outer.y);
+            Vertex(outer.x, outer.y);
         }
-        glVertex2f(loc.x, loc.y);
+        Vertex(loc.x, loc.y);
         return false;
     }
 }
 
 void LagOMeterRenderer::render(REAL lag) {
-    color.toGl();
+    color.toRenderer();
     BeginLineStrip();
     drawTriangle(eCoord(0,0), directions.ahead(), lag, 1);
     RenderEnd();
@@ -4094,15 +4094,13 @@ public:
         eCoord outer = midle + directions.get(directions.ahead() + 2 * i) * .05f;
 
         BeginLineStrip();
-        //Colour::black.toGl();
-        color.toGl();
-        glVertex2f(inner.x, inner.y);
+        //Colour::black.toRenderer();
+        color.toRenderer();
+        Vertex(inner.x, inner.y);
+        Vertex(midle.x, midle.y);
 
-
-        glVertex2f(midle.x, midle.y);
-
-        Colour::black.toGl();
-        glVertex2f(outer.x, outer.y);
+        Colour::black.toRenderer();
+        Vertex(outer.x, outer.y);
         RenderEnd();
     }
     void render() {
@@ -4790,7 +4788,7 @@ void gCycle::Render2D(tCoord scale) const {
         alpha -= 2 * (se_GameTime() - DeathTime());
         if(alpha <= 0) return;
     }
-    glColor4f(color_.r_, color_.g_, color_.b_, alpha);
+    Color(color_.r_, color_.g_, color_.b_, alpha);
     eCoord pos = PredictPosition(), dir = Direction();
     // tCoord p = pos;
     glPushMatrix();
@@ -4801,11 +4799,11 @@ void gCycle::Render2D(tCoord scale) const {
                         pos.x, pos.y, 0, 1
                     };
     glMultMatrixf(m);
-    glBegin(GL_TRIANGLES);
-    glVertex2f(.5, 0);
-    glVertex2f(-.5, .5);
-    glVertex2f(-.5, -.5);
-    glEnd();
+    BeginTriangles();
+    Vertex(.5f, 0);
+    Vertex(-.5f, .5f);
+    Vertex(-.5f, -.5f);
+    RenderEnd();
     glPopMatrix();
 }
 
