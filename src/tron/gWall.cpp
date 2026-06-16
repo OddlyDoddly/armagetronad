@@ -1139,8 +1139,13 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
             inst.p1x = p1.x; inst.p1y = p1.y;
             inst.p2x = p2.x; inst.p2y = p2.y;
             inst.ta = ta;    inst.te = te;
-            inst.r = r; inst.g = g; inst.b = b; inst.a = a;
             inst.h = h; inst.hfrac = hfrac;
+            // Mirror upperlinecolor(): in wireframe texture mode use white lines.
+            if ( rTextureGroups::TextureMode[rTextureGroups::TEX_WALL] < 0 )
+                inst.r = inst.g = inst.b = 1.f;
+            else
+                { inst.r = r; inst.g = g; inst.b = b; }
+            inst.a = a;
             gl::g_wallInstanced.add(inst);
         }
         else

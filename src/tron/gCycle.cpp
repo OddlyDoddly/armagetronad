@@ -4251,27 +4251,36 @@ void gCycleWallsDisplayListManager::RenderAllWithDisplayList( eCamera const * ca
         return;
     }
 
+    // Bookkeeping helper shared by both paths below.
+    auto doBookkeeping = [&]() {
+        wallsWithDisplayListMinDistance_ = 1E+30;
+        wallsInDisplayList_ = 0;
+        run = wallsWithDisplayList_;
+        while ( run )
+        {
+            if ( run->BegPos() < wallsWithDisplayListMinDistance_ )
+                wallsWithDisplayListMinDistance_ = run->BegPos();
+            wallsInDisplayList_++;
+            run = run->Next();
+        }
+    };
+
+#if !defined(DEDICATED) && defined(HAVE_GLEW)
+    // Modern path: walls go through g_wallInstanced; skip the display list
+    // machinery entirely (the instanced VBO upload replaces it).
+    if ( sg_modernRenderer )
+    {
+        doBookkeeping();
+        RenderAll( camera, cycle, wallsWithDisplayList_ );
+        return;
+    }
+#endif
+
     // fill display list
     rDisplayListFiller filler( displayList_ );
 
     if ( rDisplayList::IsRecording() )
-    {
-        wallsWithDisplayListMinDistance_ = 1E+30;
-        wallsInDisplayList_ = 0;
-
-        // bookkeeping of walls in the display list
-        run = wallsWithDisplayList_;
-        while( run )
-        {
-            gNetPlayerWall * next = run->Next();
-            if ( run->BegPos() < wallsWithDisplayListMinDistance_ )
-            {
-                wallsWithDisplayListMinDistance_ = run->BegPos();
-            }
-            wallsInDisplayList_++;
-            run = next;
-        }
-    }
+        doBookkeeping();
 
     // render walls with display list
     RenderAll( camera, cycle, wallsWithDisplayList_ );
