@@ -77,6 +77,11 @@ message CycleSync
     optional uint32 last_message_id = 10; // ID of last control message from client
     optional uint32 brake_compressed = 11; // compressed brake reservoir
 
+    // surface-graph: which drivable surface the cycle is on (0 == ground).
+    // Only written when the THREE_D feature is negotiated on; never derived
+    // from (x,y) on the client (overhangs make that ambiguous).
+    optional uint32 surface_id = 12;
+
     // legacy sync data end marker
     optional bool legacy_sync_end = 20001;
 

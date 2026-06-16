@@ -49,6 +49,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "ePlayer.h"
 #include "eTess2.h"
 #include "nConfig.h"
+#include "nFeatures.h"
 #include "nProtoBuf.h"
 
 #include <fstream>
@@ -580,6 +581,10 @@ gPlayerWall::gPlayerWall(gNetPlayerWall*w, gCycle *p)
 
     if (cycle_)
         windingNumber_ = cycle_->WindingNumber();
+
+    // inherit the surface this wall segment belongs to (0 == ground in 2D)
+    if ( w )
+        surfaceId_ = w->SurfaceId();
 
 #ifdef DEBUG
     if (!cycle_)
@@ -1685,6 +1690,9 @@ gNetPlayerWall::gNetPlayerWall(gCycle *cyc,
     preliminary=(sn_GetNetState()==nCLIENT);
     obsoleted_=-100;
     gridding=1E+20;
+    // surface-graph: this wall belongs to the surface its cycle is on
+    if ( cyc )
+        surfaceId_ = cyc->SurfaceId();
     MyInitAfterCreation();
 }
 
@@ -2174,6 +2182,16 @@ void gNetPlayerWall::WriteSync( Game::PlayerWallSync & sync, bool init ) const
         sync.set_begin_distance( dbegin );
         sync.set_begin_time( tBeg );
         sync.set_preliminary( preliminary );
+
+        // surface-graph: record which surface this wall lives on, so the
+        // client can render it at the right height. 3D feature only.
+        if ( nFeatures::ThreeDActive() )
+        {
+            unsigned short sid = surfaceId_;
+            if ( sid == 0 && cycle_ )
+                sid = cycle_->SurfaceId();
+            sync.set_surface_id( sid );
+        }
     }
 
     if (inGrid){
@@ -2207,6 +2225,10 @@ static bool sg_ServerSentHoles = false;
 void gNetPlayerWall::ReadSync( Game::PlayerWallSync const & sync, nSenderInfo const & sender )
 {
     nNetObject::ReadSync( sync.base(), sender );
+
+    // surface-graph: authoritative surface for this wall (3D feature only)
+    if ( sync.has_surface_id() )
+        surfaceId_ = sync.surface_id();
 
     ClearDisplayList();
 

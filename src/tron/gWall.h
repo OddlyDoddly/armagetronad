@@ -193,6 +193,8 @@ class gNetPlayerWall: public tListItem< gNetPlayerWall >, public nNetObject{
     eCoord beg,end;  // start and end points
     REAL tBeg,tEnd; // start and end time
 
+    unsigned short surfaceId_ = 0; //!< surface-graph surface this wall is on (3D only)
+
     unsigned short inGrid;   // are we planned to be insite the grid?
     REAL           gridding; // when are we going to enter the grid?
     bool           preliminary:1; // is it a eWall preliminary installed?
@@ -288,6 +290,9 @@ public:
 
     bool Preliminary()const{return preliminary;}
     bool InGrid()const{return inGrid;}
+
+    unsigned short SurfaceId() const { return surfaceId_; }
+    void SetSurfaceId( unsigned short id ) { surfaceId_ = id; }
 
     static void Clear(); // delete all sg_netPlayerWalls.
 
