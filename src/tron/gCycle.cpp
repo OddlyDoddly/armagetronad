@@ -68,6 +68,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #ifndef DEDICATED
 #define DONTDOIT
 #include "rRender.h"
+#ifdef HAVE_GLEW
+#include "render/gl/gl_wall_instanced.h"
+#endif
 #endif
 
 // TODO: get rid of this
@@ -4285,7 +4288,7 @@ void gCycleWallsDisplayListManager::RenderAll( eCamera const * camera, gCycle * 
     sr_DepthOffset(true);
     if ( rTextureGroups::TextureMode[rTextureGroups::TEX_WALL] != 0 )
         glDisable(GL_TEXTURE_2D);
-    
+
     gNetPlayerWall * run = list;
     while( run )
     {
@@ -4295,10 +4298,16 @@ void gCycleWallsDisplayListManager::RenderAll( eCamera const * camera, gCycle * 
     }
 
     RenderEnd();
+
+#if !defined(DEDICATED) && defined(HAVE_GLEW)
+    if ( sg_modernRenderer )
+        gl::g_wallInstanced.flushLines();
+#endif
+
     sr_DepthOffset(false);
     if ( rTextureGroups::TextureMode[rTextureGroups::TEX_WALL] != 0 )
         glEnable(GL_TEXTURE_2D);
-    
+
     run = list;
     while( run )
     {
@@ -4308,6 +4317,15 @@ void gCycleWallsDisplayListManager::RenderAll( eCamera const * camera, gCycle * 
     }
 
     RenderEnd();
+
+#if !defined(DEDICATED) && defined(HAVE_GLEW)
+    if ( sg_modernRenderer )
+    {
+        GLint texID = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &texID);
+        gl::g_wallInstanced.flushQuads(static_cast<GLuint>(texID));
+    }
+#endif
 }
 
 void gCycleWallsDisplayListManager::RenderAll( eCamera const * camera, gCycle * cycle )

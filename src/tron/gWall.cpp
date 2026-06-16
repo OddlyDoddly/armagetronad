@@ -40,6 +40,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "rScreen.h"
 #include "rRender.h"
 #include "eCamera.h"
+#ifdef HAVE_GLEW
+#include "render/gl/gl_wall_instanced.h"
+#endif
 #include "tConfiguration.h"
 #include "gExplosion.h"
 #include "tMath.h"
@@ -1129,6 +1132,20 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
 
 
     if (hfrac>0){
+#if !defined(DEDICATED) && defined(HAVE_GLEW)
+        if ( sg_modernRenderer )
+        {
+            WallInstance inst;
+            inst.p1x = p1.x; inst.p1y = p1.y;
+            inst.p2x = p2.x; inst.p2y = p2.y;
+            inst.ta = ta;    inst.te = te;
+            inst.r = r; inst.g = g; inst.b = b; inst.a = a;
+            inst.h = h; inst.hfrac = hfrac;
+            gl::g_wallInstanced.add(inst);
+        }
+        else
+#endif
+        {
         if ( ( mode & gWallRenderMode_Lines && sg_renderBulkLines  ) ){
 
             BeginLines();
@@ -1170,6 +1187,7 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
             TexCoord(te,hfrac);
             Vertex(p2.x,p2.y,extrarise);
         }
+        } // end else (legacy path)
     }
 }
 

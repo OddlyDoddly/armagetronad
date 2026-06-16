@@ -146,7 +146,8 @@ librender_a_SOURCES=${render_extra} render/rConsole.cpp render/rConsoleGraph.cpp
 	render/rShader.h render/rShader.cpp \
 	render/gl/gl_mesh.h \
 	render/gl/gl_backend.h render/gl/gl_backend.cpp \
-	render/gl/gl_geometry_cache.h render/gl/gl_geometry_cache.cpp
+	render/gl/gl_geometry_cache.h render/gl/gl_geometry_cache.cpp \
+	render/gl/gl_wall_instanced.h render/gl/gl_wall_instanced.cpp
 
 libtron_a_SOURCES=tron/gAIBase.cpp tron/gAIBase.h tron/gAICharacter.cpp tron/gAICharacter.h tron/gArena.cpp tron/gArena.h\
 	tron/gArmagetron.cpp tron/gCamera.cpp tron/gCamera.h tron/gCycle.cpp tron/gCycle.h tron/gCycleMovement.cpp\
