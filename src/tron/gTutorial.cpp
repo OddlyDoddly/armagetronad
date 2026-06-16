@@ -133,20 +133,10 @@ extern uActionTooltip::Level su_helpLevel;
 class gTutorial: public tListItem< gTutorial >, public gTutorialBase
 {
 public:
-    gTutorial( char const * name )
-    : tListItem< gTutorial >( anchor_ )
-      , settings_( sg_DefaultSettings() )
-      , completed_( true )
-      , completedConf_( tString("TUTORIAL_COMPLETE_") + tString(name).ToUpper(), completed_ )
-      , name_( name )
-      , success_( false )
-      , finished_( false )
-      , roundEndReached_( false )
-      , warpedAhead_( 0 )
-      , difficulty_ ( 0 )
-    {
-        CreateMenu();
-    }
+    // Constructor and destructor defined out-of-line (after gTutorialMenuItem is complete) so
+    // unique_ptr<gTutorialMenuItem> can see the complete type when instantiating its destructor.
+    virtual ~gTutorial();
+    gTutorial( char const * name );
 
     virtual bool IsChallenge() const
     {
@@ -670,6 +660,25 @@ public:
 private:
     gTutorial & tutorial_;
 };
+
+// gTutorialMenuItem is now complete. Define constructor and destructor here so
+// unique_ptr<gTutorialMenuItem> can see the complete type when instantiating its destructor.
+gTutorial::~gTutorial() = default;
+
+gTutorial::gTutorial( char const * name )
+: tListItem< gTutorial >( anchor_ )
+  , settings_( sg_DefaultSettings() )
+  , completed_( true )
+  , completedConf_( tString("TUTORIAL_COMPLETE_") + tString(name).ToUpper(), completed_ )
+  , name_( name )
+  , success_( false )
+  , finished_( false )
+  , roundEndReached_( false )
+  , warpedAhead_( 0 )
+  , difficulty_ ( 0 )
+{
+    CreateMenu();
+}
 
 static uMenu sg_tutorialMenu( "$game_menu_tutorials_text" );
 
