@@ -1774,9 +1774,18 @@ gParser::parseRamp(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
 void
 gParser::parseBuilding(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
 {
-    // For PR #1 a building is an extruded footprint that acts as a solid
-    // obstacle on its level. We draw its footprint as massive walls on the
-    // active grid; the height/style are consumed by the renderer in a later PR.
+    // A building is an extruded footprint that acts as a solid obstacle on its
+    // level. We draw its footprint as massive walls on the active grid (so it
+    // blocks cycles now) and record it on the world (footprint + height + style)
+    // for the renderer to extrude into a Tron-Legacy block.
+    eBuilding building;
+    building.height = myxmlGetPropFloat( cur, "height" );
+    building.level  = sg_ParseLevel( myxmlGetProp( cur, "level" ).Get() );
+    {
+        char const * style = myxmlGetProp( cur, "style" ).Get();
+        building.style = style ? style : "tron";
+    }
+
     ePoint * R = NULL;
     eCoord firstCoord( 0, 0 );
     bool any = false;
@@ -1788,6 +1797,7 @@ gParser::parseBuilding(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
         else if ( isElement( p->name, (const xmlChar *)"Point", keyword ) )
         {
             eCoord c = eCoord( myxmlGetPropFloat( p, "x" ), myxmlGetPropFloat( p, "y" ) ) * sizeMultiplier;
+            building.footprint.push_back( c );
             if ( R == NULL )
             {
                 R = grid->Insert( c );
@@ -1804,6 +1814,9 @@ gParser::parseBuilding(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
 
     if ( any && R != NULL )
         this->DrawRim( grid, R, firstCoord );
+
+    if ( any )
+        theWorld_->AddBuilding( building );
 }
 
 void

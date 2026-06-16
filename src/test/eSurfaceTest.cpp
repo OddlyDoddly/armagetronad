@@ -85,6 +85,17 @@ int main()
     eCoord mapped = p->MapPoint( p->A(), eCoord( 250, 250 ) );
     Check( ( mapped - eCoord( 250, 250 ) ).Norm() < 1e-2, "portal MapPoint round-trips on identity frame" );
 
+    // buildings are recorded on the world for the renderer to extrude
+    eBuilding b;
+    b.footprint.push_back( eCoord( 10, 10 ) );
+    b.footprint.push_back( eCoord( 30, 10 ) );
+    b.footprint.push_back( eCoord( 30, 30 ) );
+    b.footprint.push_back( eCoord( 10, 30 ) );
+    b.height = 80; b.level = eZLevel::Ground; b.style = "tron";
+    world->AddBuilding( b );
+    Check( world->BuildingCount() == 1, "world records a building" );
+    Check( world->Buildings()[0].height == 80, "building keeps its height" );
+
     // 3D feature gate is queryable (value depends on negotiated session state)
     std::cout << "info: nFeatures::ThreeDActive() = "
               << ( nFeatures::ThreeDActive() ? "true" : "false" ) << "\n";

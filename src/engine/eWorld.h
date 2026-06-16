@@ -33,8 +33,20 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "tSafePTR.h"
 #include "eSurface.h"
 #include <vector>
+#include <string>
 
 class eGrid;
+
+//! A decorative/obstacle extruded block (Tron-Legacy building). Stored on the
+//! world so the renderer can extrude it; its footprint is also drawn as a solid
+//! collision wall on its level's surface at parse time.
+struct eBuilding
+{
+    std::vector< eCoord > footprint; //!< world-space footprint polygon
+    REAL                  height;    //!< extrusion height
+    eZLevel               level;     //!< which z-level it stands on
+    std::string           style;     //!< renderer style hint (e.g. "tron")
+};
 
 //! The set of drivable surfaces making up one arena (the "surface graph").
 //!
@@ -85,6 +97,11 @@ public:
 
     int PortalCount() const { return static_cast<int>( portals_.size() ); }
 
+    //! register a decorative/obstacle building for the renderer to extrude
+    void AddBuilding( eBuilding const & b ) { buildings_.push_back( b ); }
+    std::vector< eBuilding > const & Buildings() const { return buildings_; }
+    int BuildingCount() const { return static_cast<int>( buildings_.size() ); }
+
 protected:
     ~eWorld();
 
@@ -93,6 +110,7 @@ private:
     bool       is3D_;
     std::vector< tJUST_CONTROLLED_PTR< eSurface > > surfaces_;
     std::vector< tJUST_CONTROLLED_PTR< ePortal  > > portals_;
+    std::vector< eBuilding > buildings_;
 };
 
 #endif // ArmageTron_WORLD_H

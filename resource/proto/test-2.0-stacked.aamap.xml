@@ -28,6 +28,14 @@
 					<Point x="100" y="400" />
 				</Floor>
 
+				<!-- a Tron-Legacy block tower standing on the ground -->
+				<Building height="120" style="tron" level="ground">
+					<Point x="430" y="430" />
+					<Point x="470" y="430" />
+					<Point x="470" y="470" />
+					<Point x="430" y="470" />
+				</Building>
+
 				<!-- ramp rising eastward from ground onto the air platform.
 				     low seam midpoint (250,250) lands on the ground floor;
 				     high seam midpoint (350,250) lands on the air platform,
