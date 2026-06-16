@@ -37,6 +37,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "rTexture.h"
 #include "eTimer.h"
 #include "gGame.h"
+#include "gArena.h"
+#include "eWorld.h"
+#include "eSurface.h"
 #include "rScreen.h"
 #include "rRender.h"
 #include "eCamera.h"
@@ -1106,8 +1109,21 @@ static const bool sg_renderBulkLines = true;
 static const bool sg_renderBulkQuads = true;
 #endif
 
+//! base render height of a surface-graph surface (0 for the ground / 2D maps).
+//! Lets walls and trails draw at the height of the surface they belong to.
+static REAL se_SurfaceBaseZ( unsigned short surfaceId )
+{
+    if ( surfaceId == 0 )
+        return 0;
+    gArena * arena = sg_GetArena();
+    eWorld * world = arena ? arena->GetWorld() : NULL;
+    eSurface * surface = world ? world->SurfaceById( surfaceId ) : NULL;
+    return surface ? surface->BaseZ() : 0;
+}
+
 void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL te,REAL r,REAL g,REAL b,REAL a, gWallRenderMode mode ){
     REAL hfrac=1;
+    REAL zbase = se_SurfaceBaseZ( surfaceId_ );
 
     if (bool(cycle_) && !cycle_->Alive() && gCycle::WallsStayUpDelay() >= 0 ){
         REAL dt=(se_GameTime()-cycle_->deathTime-gCycle::WallsStayUpDelay())*2;
@@ -1161,9 +1177,9 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
             BeginLines();
 
             upperlinecolor(r,g,b,a);
-            Vertex(p1.x,p1.y,h*hfrac);
+            Vertex(p1.x,p1.y,zbase + h*hfrac);
             upperlinecolor(r,g,b,a);
-            Vertex(p2.x,p2.y,h*hfrac);
+            Vertex(p2.x,p2.y,zbase + h*hfrac);
         }
 
         //glColor4f(r,g,b,a);
@@ -1183,19 +1199,19 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
 
             Color(r,g,b,1);
             TexCoord(ta,hfrac);
-            Vertex(p1.x,p1.y,extrarise);
+            Vertex(p1.x,p1.y,zbase + extrarise);
 
             Color(r,g,b,1);
             TexCoord(ta,0);
-            Vertex(p1.x,p1.y,extrarise + h*hfrac);
+            Vertex(p1.x,p1.y,zbase + extrarise + h*hfrac);
 
             Color(r,g,b,1);
             TexCoord(te,0);
-            Vertex(p2.x,p2.y,extrarise + h*hfrac);
+            Vertex(p2.x,p2.y,zbase + extrarise + h*hfrac);
 
             Color(r,g,b,1);
             TexCoord(te,hfrac);
-            Vertex(p2.x,p2.y,extrarise);
+            Vertex(p2.x,p2.y,zbase + extrarise);
         }
         } // end else (legacy path)
     }
