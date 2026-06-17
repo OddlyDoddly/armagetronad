@@ -1209,15 +1209,13 @@ dnl *************************************************
 
 if test ${have_vulkan} = true; then
   AC_CHECK_LIB(vulkan,vkCreateInstance,,
-  AC_MSG_WARN([Vulkan loader (libvulkan) not found. Vulkan backend disabled.])
-  have_vulkan=false
+  AC_MSG_ERROR([--with-vulkan was requested, but the Vulkan loader (libvulkan) was not found.])
   )
 fi
 
 if test ${have_vulkan} = true; then
   AC_CHECK_HEADERS([vulkan/vulkan.h],,
-  AC_MSG_WARN([Vulkan headers not found. Vulkan backend disabled.])
-  have_vulkan=false
+  AC_MSG_ERROR([--with-vulkan was requested, but the Vulkan headers (vulkan/vulkan.h) were not found.])
   )
 fi
 
@@ -1226,8 +1224,7 @@ GLSLANG=""
 if test ${have_vulkan} = true; then
   AC_CHECK_PROGS(GLSLANG, [glslangValidator glslc], [])
   if test "x${GLSLANG}" = "x"; then
-    AC_MSG_WARN([No GLSL->SPIR-V compiler (glslangValidator/glslc) found. Vulkan backend disabled.])
-    have_vulkan=false
+    AC_MSG_ERROR([--with-vulkan was requested, but no GLSL->SPIR-V compiler (glslangValidator/glslc) was found.])
   fi
 fi
 
