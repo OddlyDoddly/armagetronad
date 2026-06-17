@@ -501,6 +501,13 @@ VkCommandBuffer VulkanContext::beginFrame() {
     if (device_ == VK_NULL_HANDLE)
         return VK_NULL_HANDLE;
 
+    // a frame was already begun (and not yet ended/presented) — callers in the
+    // legacy GL clear/swap path can invoke ClearGL() more than once per actual
+    // presented frame, so re-acquiring here would leak swapchain images and
+    // eventually deadlock in vkAcquireNextImageKHR.
+    if (currentCmd_ != VK_NULL_HANDLE)
+        return currentCmd_;
+
     vkWaitForFences(device_, 1, &inFlight_[currentFrame_], VK_TRUE, UINT64_MAX);
 
     VkResult acq = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
