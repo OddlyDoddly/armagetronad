@@ -45,9 +45,13 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
     #include "rSDL.h"
     #ifdef HAVE_VULKAN
     #include <SDL_vulkan.h>
-    // Selects the Vulkan window/backend; declared in rRender.h, externed here to
-    // avoid rRender.h's glBegin/glEnd-disabling macros leaking into this TU.
-    extern bool sg_vulkanRenderer;
+    // DONTDOIT lets us pull in rRender.h's renderer-abstraction wrappers
+    // (TexMatrix()/IdentityMatrix()/etc, used to keep the Vulkan renderer's
+    // matrix stack in sync) without tripping its glBegin/glEnd-disabling
+    // macros, since this file also makes plenty of raw GL calls for the
+    // legacy/modern GL backends.
+    #define DONTDOIT
+    #include "rRender.h"
     #endif
 
     #ifdef POWERPAK_DEB
@@ -1748,6 +1752,27 @@ void sr_ResetRenderState(bool menu){
     if(!sr_glOut)
         return;
     #ifndef DEDICATED
+
+    #ifdef HAVE_VULKAN
+    if (sg_vulkanRenderer)
+    {
+        // None of the raw GL state/matrix calls below reach the Vulkan
+        // backend (there's no GL context), so the renderer's own matrix
+        // stack and flags would otherwise keep whatever a previous 3D
+        // viewport setup left them at, clipping all 2D/menu geometry into
+        // nothing. Reset them through the abstraction instead.
+        renderer->SetFlag(rRenderer::DEPTH_TEST, !menu);
+        renderer->SetFlag(rRenderer::ALPHA_BLEND, sr_alphaBlend);
+
+        TexMatrix();
+        IdentityMatrix();
+        ProjMatrix();
+        IdentityMatrix();
+        ModelMatrix();
+        IdentityMatrix();
+        return;
+    }
+    #endif
 
     // Z-Buffering and perspective correction
 
