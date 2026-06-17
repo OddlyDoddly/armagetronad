@@ -1209,13 +1209,13 @@ dnl *************************************************
 
 if test ${have_vulkan} = true; then
   AC_CHECK_LIB(vulkan,vkCreateInstance,,
-  AC_MSG_ERROR([--with-vulkan was requested, but the Vulkan loader (libvulkan) was not found.])
+  [AC_MSG_ERROR([--with-vulkan was requested, but the Vulkan loader (libvulkan) was not found.])]
   )
 fi
 
 if test ${have_vulkan} = true; then
   AC_CHECK_HEADERS([vulkan/vulkan.h],,
-  AC_MSG_ERROR([--with-vulkan was requested, but the Vulkan headers (vulkan/vulkan.h) were not found.])
+  [AC_MSG_ERROR([--with-vulkan was requested, but the Vulkan headers (vulkan/vulkan.h) were not found.])]
   )
 fi
 
