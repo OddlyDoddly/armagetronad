@@ -900,8 +900,6 @@ int main(int argc,char **argv){
 
             SDLCleanup sdlCleanup; // call SDL_Quit later
 
-            sr_glRendererInit();
-
 #if SDL_VERSION_ATLEAST(2,0,0)
             SDL_SetEventFilter(&filter, 0);
 #else
@@ -917,6 +915,11 @@ int main(int argc,char **argv){
 #endif
 
             if (sr_InitDisplay()){
+
+                // The Vulkan backend needs a live SDL window (for the surface),
+                // so the renderer can only be picked after sr_InitDisplay()
+                // has actually created sr_screen.
+                sr_glRendererInit();
 
                 sg_SetIcon();
 
