@@ -1756,6 +1756,13 @@ void sr_ResetRenderState(bool menu){
     #ifdef HAVE_VULKAN
     if (sg_vulkanRenderer)
     {
+        // sr_InitDisplay() runs before sr_glRendererInit() constructs the
+        // VulkanRenderer (it needs the SDL window/surface first), so on the
+        // very first call the renderer doesn't exist yet. Its constructor
+        // establishes sane initial state on its own, so just skip the reset.
+        if (!renderer)
+            return;
+
         // None of the raw GL state/matrix calls below reach the Vulkan
         // backend (there's no GL context), so the renderer's own matrix
         // stack and flags would otherwise keep whatever a previous 3D
