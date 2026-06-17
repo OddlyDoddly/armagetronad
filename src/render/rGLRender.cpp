@@ -63,6 +63,70 @@ private:
 };
 static gGfxDebugCommandLineAnalyzer s_gfxDebugAnalyzer;
 
+// --vulkan / --modern-gl / --legacy-gl: force the renderer backend for this
+// run, overriding whatever VULKAN_RENDERER/MODERN_RENDERER say in the config
+// files. Recorded during analysis, applied in DoExecute() (which runs after
+// st_LoadConfig()) so the command line always wins.
+class gRendererCommandLineAnalyzer: public tCommandLineAnalyzer
+{
+private:
+    enum class Force { None, Vulkan, ModernGL, LegacyGL } force_ = Force::None;
+
+    bool DoAnalyze( tCommandLineParser & parser, int pass ) override
+    {
+        if (pass > 0)
+            return false;
+
+        if ( parser.GetSwitch( "--vulkan", nullptr ) )
+        {
+            force_ = Force::Vulkan;
+            return true;
+        }
+        if ( parser.GetSwitch( "--modern-gl", nullptr ) )
+        {
+            force_ = Force::ModernGL;
+            return true;
+        }
+        if ( parser.GetSwitch( "--legacy-gl", nullptr ) )
+        {
+            force_ = Force::LegacyGL;
+            return true;
+        }
+        return false;
+    }
+
+    bool DoExecute() override
+    {
+        switch (force_)
+        {
+        case Force::Vulkan:
+            sg_vulkanRenderer = true;
+            sg_modernRenderer = false;
+            break;
+        case Force::ModernGL:
+            sg_vulkanRenderer = false;
+            sg_modernRenderer = true;
+            break;
+        case Force::LegacyGL:
+            sg_vulkanRenderer = false;
+            sg_modernRenderer = false;
+            break;
+        case Force::None:
+            break;
+        }
+        return true;
+    }
+
+    void DoHelp( std::ostream & s ) override
+    {
+        s << "--vulkan                      : use the Vulkan renderer for this run\n"
+          << "                               (overrides VULKAN_RENDERER in config)\n"
+          << "--modern-gl                   : use the modern GL 3.3 renderer for this run\n"
+          << "--legacy-gl                   : use the legacy fixed-function GL renderer\n";
+    }
+};
+static gRendererCommandLineAnalyzer s_rendererAnalyzer;
+
 #ifndef DEDICATED
 
 #define DONTDOIT
