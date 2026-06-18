@@ -122,6 +122,8 @@ public:
 protected:
     rITexture(); //!< constructor
 
+    int GetId() const { return id_; }        //!< unique id (stable once selected); used as the Vulkan texture key
+
     virtual void OnSelect(bool enforce) = 0; //!< Selects the texture for rendering
     virtual void OnUnload() = 0;             //!< Unloads the texture from OpenGL and memory
 

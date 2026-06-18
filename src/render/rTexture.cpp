@@ -46,6 +46,30 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "rRender.h"
 #include "rGL.h"
 
+#ifdef HAVE_VULKAN
+#include "vk/vk_renderer.h"
+
+// Map the SDL/GL surface format enum onto the GL-agnostic TexFormat the Vulkan
+// uploader expects.  Mirrors rSurface::Create()'s format detection.
+static vk::TexFormat sr_vkTexFormat( GLenum glFormat )
+{
+    switch( glFormat )
+    {
+    case GL_RGBA:               return vk::TexFormat::RGBA8;
+#ifdef GL_BGRA
+    case GL_BGRA:               return vk::TexFormat::BGRA8;
+#endif
+    case GL_RGB:                return vk::TexFormat::RGB8;
+#ifdef GL_BGR
+    case GL_BGR:                return vk::TexFormat::BGR8;
+#endif
+    case GL_LUMINANCE8_ALPHA8:  return vk::TexFormat::LA8;
+    case GL_LUMINANCE:          return vk::TexFormat::L8;
+    default:                    return vk::TexFormat::RGBA8;
+    }
+}
+#endif
+
 // Load the right SDL_IMAGE header
 
 #ifdef _MSC_VER
@@ -694,6 +718,21 @@ void rISurfaceTexture::Upload( rSurface const & surface )
 
     ProcessImage(tex);
 
+#ifdef HAVE_VULKAN
+    if ( sg_vulkanRenderer )
+    {
+        // Vulkan has no GL texture object; hand the pixels to the Vulkan
+        // renderer keyed by this texture's id and skip the entire GL path.
+        if ( vk::VulkanRenderer * r = vk::GetVulkanRenderer() )
+            r->uploadTexture( uint64_t( GetId() ),
+                              tex->pixels, tex->w, tex->h,
+                              sr_vkTexFormat( texformat ), repx_, repy_,
+                              uint32_t( tex->pitch ) );
+        sr_UnlockSDL();
+        return;
+    }
+#endif
+
     if(repx_)
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_REPEAT);
     else
@@ -803,6 +842,28 @@ void rISurfaceTexture::Upload( rSurface const & surface )
 void rISurfaceTexture::OnSelect( bool enforce )
 {
 #ifndef DEDICATED
+#ifdef HAVE_VULKAN
+    if( sg_vulkanRenderer )
+    {
+        // Flush any geometry still queued under the previously bound texture so
+        // each batch stays homogeneous in texture.
+        RenderEnd(true);
+
+        // Assign id_ (base does this) before we use it as the Vulkan key.
+        rITexture::OnSelect(enforce);
+
+        // First use: load the surface into GL-agnostic memory and upload it.
+        if( textureModeLast_ < 0 )
+        {
+            OnSelectCore();
+            textureModeLast_ = 0; // mark loaded (Loaded() checks >= 0)
+        }
+
+        if( vk::VulkanRenderer * r = vk::GetVulkanRenderer() )
+            r->setCurrentTexture( uint64_t( GetId() ) );
+        return;
+    }
+#endif
     if(sr_glOut)
     {
         RenderEnd(true);
@@ -883,6 +944,16 @@ void rISurfaceTexture::OnSelect( bool enforce )
 void rISurfaceTexture::OnUnload( void )
 {
 #ifndef DEDICATED
+#ifdef HAVE_VULKAN
+    if( sg_vulkanRenderer )
+    {
+        if( vk::VulkanRenderer * r = vk::GetVulkanRenderer() )
+            r->dropTexture( uint64_t( GetId() ) );
+        textureModeLast_=-100;
+        rITexture::OnUnload();
+        return;
+    }
+#endif
     if ( tint_.IsValid() )
     {
         rDisplayList::ClearAll();

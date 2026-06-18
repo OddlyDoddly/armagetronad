@@ -26,8 +26,10 @@ of the License, or (at your option) any later version.
 #include "tConsole.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <sstream>
+#include <vector>
 
 // SPIR-V bytecode generated from shaders/batch.{vert,frag} at build time
 // (glslangValidator --vn).  See Makefile.am for the rule.
@@ -61,14 +63,17 @@ VulkanRenderer::~VulkanRenderer() {
             if (f.buffer) vkDestroyBuffer(d, f.buffer, nullptr);
             if (f.memory) vkFreeMemory(d, f.memory, nullptr);
         }
-        if (sampler_)     vkDestroySampler(d, sampler_, nullptr);
-        if (whiteView_)   vkDestroyImageView(d, whiteView_, nullptr);
-        if (whiteImage_)  vkDestroyImage(d, whiteImage_, nullptr);
-        if (whiteMemory_) vkFreeMemory(d, whiteMemory_, nullptr);
+        // Image-side resources for every live and pending-delete texture.
+        for (auto& kv : textures_)   destroyGpuTextureNow(kv.second);
+        textures_.clear();
+        for (auto& pd : pendingDeletes_) destroyGpuTextureNow(pd.tex);
+        pendingDeletes_.clear();
         if (trianglePipeline_) vkDestroyPipeline(d, trianglePipeline_, nullptr);
         if (linePipeline_)     vkDestroyPipeline(d, linePipeline_, nullptr);
         if (pipelineLayout_)   vkDestroyPipelineLayout(d, pipelineLayout_, nullptr);
-        if (descPool_)         vkDestroyDescriptorPool(d, descPool_, nullptr);
+        // Destroying each pool frees all descriptor sets allocated from it.
+        for (VkDescriptorPool pool : descPools_) vkDestroyDescriptorPool(d, pool, nullptr);
+        descPools_.clear();
         if (descLayout_)       vkDestroyDescriptorSetLayout(d, descLayout_, nullptr);
     }
     ctx_.shutdown();
@@ -219,46 +224,142 @@ bool VulkanRenderer::createPipelines() {
     return ok;
 }
 
-bool VulkanRenderer::createDefaultTexture() {
+// Bytes per source pixel for a given TexFormat.
+static uint32_t texFormatBpp(TexFormat f) {
+    switch (f) {
+    case TexFormat::RGBA8:
+    case TexFormat::BGRA8: return 4;
+    case TexFormat::RGB8:
+    case TexFormat::BGR8:  return 3;
+    case TexFormat::LA8:   return 2;
+    case TexFormat::L8:
+    case TexFormat::A8:    return 1;
+    }
+    return 4;
+}
+
+// Convert any source layout into a tightly-packed RGBA8 buffer.  32-bit RGBA
+// is copied straight through; BGRA8 gets its R/B swapped; everything narrower
+// is expanded (3-byte and luminance/alpha formats are not guaranteed to be
+// sampleable in Vulkan, so we never upload them directly).  srcPitch is the
+// source row stride in bytes (handles SDL surface row padding).
+static void expandToRGBA8(const void* src, uint32_t w, uint32_t h,
+                          TexFormat fmt, uint32_t srcPitch,
+                          std::vector<uint8_t>& out) {
+    const uint32_t bpp = texFormatBpp(fmt);
+    if (srcPitch == 0) srcPitch = w * bpp;
+    const uint8_t* rows = static_cast<const uint8_t*>(src);
+    out.resize(size_t(w) * h * 4);
+    uint8_t* d = out.data();
+    for (uint32_t y = 0; y < h; ++y) {
+        const uint8_t* s = rows + size_t(y) * srcPitch;
+        for (uint32_t x = 0; x < w; ++x, s += bpp, d += 4) {
+            switch (fmt) {
+            case TexFormat::RGBA8: d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; d[3]=s[3]; break;
+            case TexFormat::BGRA8: d[0]=s[2]; d[1]=s[1]; d[2]=s[0]; d[3]=s[3]; break;
+            case TexFormat::RGB8:  d[0]=s[0]; d[1]=s[1]; d[2]=s[2]; d[3]=255;  break;
+            case TexFormat::BGR8:  d[0]=s[2]; d[1]=s[1]; d[2]=s[0]; d[3]=255;  break;
+            case TexFormat::LA8:   d[0]=d[1]=d[2]=s[0]; d[3]=s[1];             break;
+            case TexFormat::L8:    d[0]=d[1]=d[2]=s[0]; d[3]=255;             break;
+            case TexFormat::A8:    d[0]=d[1]=d[2]=255;  d[3]=s[0];            break;
+            }
+        }
+    }
+}
+
+VkDescriptorSet VulkanRenderer::allocateDescriptorSet() {
     VkDevice d = ctx_.device();
-    const uint32_t white = 0xFFFFFFFFu;
+
+    auto tryAlloc = [&](VkDescriptorPool pool) -> VkDescriptorSet {
+        VkDescriptorSetAllocateInfo dsai{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
+        dsai.descriptorPool     = pool;
+        dsai.descriptorSetCount = 1;
+        dsai.pSetLayouts        = &descLayout_;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        if (vkAllocateDescriptorSets(d, &dsai, &set) != VK_SUCCESS)
+            return VK_NULL_HANDLE;
+        return set;
+    };
+
+    if (!descPools_.empty()) {
+        if (VkDescriptorSet set = tryAlloc(descPools_.back()))
+            return set;
+        // current pool exhausted/fragmented: fall through and add a new one.
+    }
+
+    VkDescriptorPoolSize ps{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64 };
+    VkDescriptorPoolCreateInfo dpci{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
+    dpci.maxSets       = 64;
+    dpci.poolSizeCount = 1;
+    dpci.pPoolSizes    = &ps;
+    VkDescriptorPool pool = VK_NULL_HANDLE;
+    if (vkCreateDescriptorPool(d, &dpci, nullptr, &pool) != VK_SUCCESS)
+        return VK_NULL_HANDLE;
+    descPools_.push_back(pool);
+    return tryAlloc(pool);
+}
+
+bool VulkanRenderer::uploadTexture(uint64_t key, const void* pixels,
+                                   uint32_t w, uint32_t h, TexFormat fmt,
+                                   bool repeatX, bool repeatY,
+                                   uint32_t srcRowBytes) {
+    if (!ready_ || !pixels || w == 0 || h == 0)
+        return false;
+    VkDevice d = ctx_.device();
+
+    // Always upload as RGBA8 (universally sampleable).
+    std::vector<uint8_t> rgba;
+    expandToRGBA8(pixels, w, h, fmt, srcRowBytes, rgba);
+    const VkDeviceSize bytes = rgba.size();
+
+    // Retire any previous upload under this key (deferred-safe).
+    if (auto it = textures_.find(key); it != textures_.end()) {
+        pendingDeletes_.push_back({ it->second, VulkanContext::kFramesInFlight + 1 });
+        textures_.erase(it);
+    }
+
+    GpuTexture t{};
 
     // Staging buffer
     VkBuffer staging; VkDeviceMemory stagingMem;
-    if (!ctx_.createBuffer(sizeof(white), VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    if (!ctx_.createBuffer(bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             staging, stagingMem))
         return false;
     void* p = nullptr;
-    vkMapMemory(d, stagingMem, 0, sizeof(white), 0, &p);
-    std::memcpy(p, &white, sizeof(white));
+    vkMapMemory(d, stagingMem, 0, bytes, 0, &p);
+    std::memcpy(p, rgba.data(), bytes);
     vkUnmapMemory(d, stagingMem);
 
     VkImageCreateInfo ici{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
     ici.imageType   = VK_IMAGE_TYPE_2D;
-    ici.extent      = { 1, 1, 1 };
+    ici.extent      = { w, h, 1 };
     ici.mipLevels   = 1;
     ici.arrayLayers = 1;
     ici.format      = VK_FORMAT_R8G8B8A8_UNORM;
     ici.tiling      = VK_IMAGE_TILING_OPTIMAL;
     ici.usage       = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     ici.samples     = VK_SAMPLE_COUNT_1_BIT;
-    if (vkCreateImage(d, &ici, nullptr, &whiteImage_) != VK_SUCCESS) return false;
+    if (vkCreateImage(d, &ici, nullptr, &t.image) != VK_SUCCESS) {
+        vkDestroyBuffer(d, staging, nullptr);
+        vkFreeMemory(d, stagingMem, nullptr);
+        return false;
+    }
 
     VkMemoryRequirements req;
-    vkGetImageMemoryRequirements(d, whiteImage_, &req);
+    vkGetImageMemoryRequirements(d, t.image, &req);
     VkMemoryAllocateInfo ai{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
     ai.allocationSize  = req.size;
     ai.memoryTypeIndex = ctx_.findMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    vkAllocateMemory(d, &ai, nullptr, &whiteMemory_);
-    vkBindImageMemory(d, whiteImage_, whiteMemory_, 0);
+    vkAllocateMemory(d, &ai, nullptr, &t.memory);
+    vkBindImageMemory(d, t.image, t.memory, 0);
 
-    // Transition + copy
+    // Transition + copy (synchronous; safe to bind in a frame afterwards).
     VkCommandBuffer cmd = ctx_.beginSingleTimeCommands();
     VkImageMemoryBarrier toDst{ VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
     toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     toDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toDst.image     = whiteImage_;
+    toDst.image     = t.image;
     toDst.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
     toDst.dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -266,8 +367,8 @@ bool VulkanRenderer::createDefaultTexture() {
 
     VkBufferImageCopy copy{};
     copy.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-    copy.imageExtent      = { 1, 1, 1 };
-    vkCmdCopyBufferToImage(cmd, staging, whiteImage_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    copy.imageExtent      = { w, h, 1 };
+    vkCmdCopyBufferToImage(cmd, staging, t.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 
     VkImageMemoryBarrier toShader = toDst;
     toShader.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -282,46 +383,100 @@ bool VulkanRenderer::createDefaultTexture() {
     vkFreeMemory(d, stagingMem, nullptr);
 
     VkImageViewCreateInfo vi{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-    vi.image    = whiteImage_;
+    vi.image    = t.image;
     vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
     vi.format   = VK_FORMAT_R8G8B8A8_UNORM;
     vi.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-    vkCreateImageView(d, &vi, nullptr, &whiteView_);
+    vkCreateImageView(d, &vi, nullptr, &t.view);
 
     VkSamplerCreateInfo sci{ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
-    sci.magFilter = VK_FILTER_LINEAR;
-    sci.minFilter = VK_FILTER_LINEAR;
-    sci.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sci.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sci.magFilter    = VK_FILTER_LINEAR;
+    sci.minFilter    = VK_FILTER_LINEAR;
+    sci.addressModeU = repeatX ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sci.addressModeV = repeatY ? VK_SAMPLER_ADDRESS_MODE_REPEAT : VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     sci.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    vkCreateSampler(d, &sci, nullptr, &sampler_);
+    vkCreateSampler(d, &sci, nullptr, &t.sampler);
 
-    // Descriptor pool + set
-    VkDescriptorPoolSize ps{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 };
-    VkDescriptorPoolCreateInfo dpci{ VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
-    dpci.maxSets       = 1;
-    dpci.poolSizeCount = 1;
-    dpci.pPoolSizes    = &ps;
-    vkCreateDescriptorPool(d, &dpci, nullptr, &descPool_);
-
-    VkDescriptorSetAllocateInfo dsai{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
-    dsai.descriptorPool     = descPool_;
-    dsai.descriptorSetCount = 1;
-    dsai.pSetLayouts        = &descLayout_;
-    vkAllocateDescriptorSets(d, &dsai, &descSet_);
+    t.set = allocateDescriptorSet();
+    if (t.set == VK_NULL_HANDLE) {
+        destroyGpuTextureNow(t);
+        return false;
+    }
 
     VkDescriptorImageInfo dii{};
-    dii.sampler     = sampler_;
-    dii.imageView   = whiteView_;
+    dii.sampler     = t.sampler;
+    dii.imageView   = t.view;
     dii.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    VkWriteDescriptorSet w{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-    w.dstSet          = descSet_;
-    w.dstBinding      = 0;
-    w.descriptorCount = 1;
-    w.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    w.pImageInfo      = &dii;
-    vkUpdateDescriptorSets(d, 1, &w, 0, nullptr);
+    VkWriteDescriptorSet wr{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+    wr.dstSet          = t.set;
+    wr.dstBinding      = 0;
+    wr.descriptorCount = 1;
+    wr.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    wr.pImageInfo      = &dii;
+    vkUpdateDescriptorSets(d, 1, &wr, 0, nullptr);
+
+    textures_[key] = t;
+    if (key == kWhiteKey)
+        whiteSet_ = t.set;
     return true;
+}
+
+void VulkanRenderer::setCurrentTexture(uint64_t key) {
+    auto it = textures_.find(key);
+    curDescSet_ = (it != textures_.end()) ? it->second.set : whiteSet_;
+}
+
+void VulkanRenderer::dropTexture(uint64_t key) {
+    if (auto it = textures_.find(key); it != textures_.end()) {
+        if (it->second.set == curDescSet_)
+            curDescSet_ = whiteSet_;
+        pendingDeletes_.push_back({ it->second, VulkanContext::kFramesInFlight + 1 });
+        textures_.erase(it);
+    }
+}
+
+void VulkanRenderer::destroyGpuTextureNow(GpuTexture& t) {
+    VkDevice d = ctx_.device();
+    // Descriptor sets are freed wholesale when their pool is destroyed; we leave
+    // t.set alone (the pool owns it) and only release the image-side resources.
+    if (t.sampler) vkDestroySampler(d, t.sampler, nullptr);
+    if (t.view)    vkDestroyImageView(d, t.view, nullptr);
+    if (t.image)   vkDestroyImage(d, t.image, nullptr);
+    if (t.memory)  vkFreeMemory(d, t.memory, nullptr);
+    t = GpuTexture{};
+}
+
+void VulkanRenderer::reapPendingDeletes() {
+    for (size_t i = 0; i < pendingDeletes_.size();) {
+        if (--pendingDeletes_[i].framesLeft == 0) {
+            destroyGpuTextureNow(pendingDeletes_[i].tex);
+            pendingDeletes_[i] = pendingDeletes_.back();
+            pendingDeletes_.pop_back();
+        } else {
+            ++i;
+        }
+    }
+}
+
+void VulkanRenderer::dropAllTextures() {
+    if (!ctx_.isReady())
+        return;
+    vkDeviceWaitIdle(ctx_.device());
+    // Preserve the renderer-owned white fallback: no engine code recreates it.
+    for (auto it = textures_.begin(); it != textures_.end();) {
+        if (it->first == kWhiteKey) { ++it; continue; }
+        destroyGpuTextureNow(it->second);
+        it = textures_.erase(it);
+    }
+    for (auto& pd : pendingDeletes_)
+        destroyGpuTextureNow(pd.tex);
+    pendingDeletes_.clear();
+    curDescSet_ = whiteSet_;
+}
+
+bool VulkanRenderer::createDefaultTexture() {
+    const uint32_t white = 0xFFFFFFFFu;
+    return uploadTexture(kWhiteKey, &white, 1, 1, TexFormat::RGBA8, true, true);
 }
 
 bool VulkanRenderer::init(SDL_Window* window) {
@@ -354,6 +509,10 @@ void VulkanRenderer::beginFrame() {
     // The in-flight fence for this frame index was just waited on, so the
     // buffer is no longer referenced by the GPU and can be safely resized.
     growFrameBufferIfNeeded();
+    // Retire textures whose last referencing frame has now completed.
+    reapPendingDeletes();
+    // Untextured geometry until the engine selects a texture this frame.
+    curDescSet_ = whiteSet_;
 }
 
 void VulkanRenderer::endFrame() {
@@ -487,10 +646,14 @@ void VulkanRenderer::flush() {
     clip.m[14] = 0.5f;
     vkMat4 mvp = clip * (projection_.back() * modelView_.back());
 
+    // Bind the texture selected by the engine's last Select(); fall back to the
+    // 1x1 white texture (pure vertex color) for untextured geometry.
+    VkDescriptorSet set = curDescSet_ ? curDescSet_ : whiteSet_;
+
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
         isLines ? linePipeline_ : trianglePipeline_);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
-        0, 1, &descSet_, 0, nullptr);
+        0, 1, &set, 0, nullptr);
     vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
         0, sizeof(float) * 16, mvp.m);
     vkCmdBindVertexBuffers(cmd, 0, 1, &fb.buffer, &offset);

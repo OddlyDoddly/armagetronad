@@ -27,6 +27,8 @@ of the License, or (at your option) any later version.
 #include "rRender.h"
 #include "vk_context.h"
 #include "vk_math.h"
+#include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 struct SDL_Window;
@@ -38,6 +40,20 @@ struct VkVertex {
     float x, y, z, w;
     float r, g, b, a;
     float s, t;
+};
+
+// Source pixel layout handed to uploadTexture().  Kept GL-agnostic so this
+// header doesn't drag GL types into rTexture.cpp; the caller maps its GL
+// format enum onto one of these.  Anything that isn't already a 32-bit RGBA/
+// BGRA layout is expanded to RGBA8 on the CPU before upload.
+enum class TexFormat {
+    RGBA8,   // 4 bytes, R,G,B,A
+    BGRA8,   // 4 bytes, B,G,R,A
+    RGB8,    // 3 bytes, R,G,B
+    BGR8,    // 3 bytes, B,G,R
+    LA8,     // 2 bytes, luminance + alpha
+    L8,      // 1 byte,  luminance
+    A8       // 1 byte,  alpha
 };
 
 // rRenderer implementation backed by Vulkan.  Mirrors ModernGLRenderer: the
@@ -64,6 +80,24 @@ public:
     // Frame hooks driven by the engine's existing clear/swap sites.
     void beginFrame();
     void endFrame();
+
+    // ---- texture management (driven by rTexture's Upload/Select/Unload) ----
+    // Upload (or re-upload) pixel data for the texture identified by key.  A
+    // previous upload under the same key is retired safely (deferred delete).
+    // srcRowBytes is the source row stride in bytes (0 = tightly packed,
+    // w * bytesPerPixel).  SDL surfaces often pad rows, so callers pass pitch.
+    bool uploadTexture(uint64_t key, const void* pixels, uint32_t w, uint32_t h,
+                       TexFormat fmt, bool repeatX, bool repeatY,
+                       uint32_t srcRowBytes = 0);
+    // Select the descriptor set bound by subsequent draws.  Falls back to the
+    // 1x1 white texture when key is unknown (untextured -> pure vertex color).
+    void setCurrentTexture(uint64_t key);
+    // Retire a texture's GPU resources (deferred until no in-flight frame uses it).
+    void dropTexture(uint64_t key);
+    // Retire every texture immediately (waits for the device to go idle first).
+    void dropAllTextures();
+    // True once the device/pipelines are up and uploads are possible.
+    bool textureReady() const { return ready_; }
 
     // ---- rRenderer interface ----
     void Vertex(REAL x, REAL y)                 override;
@@ -110,8 +144,27 @@ private:
         Quads, QuadStrip, None
     };
 
+    // GPU-resident texture: image + view + per-texture sampler + its descriptor
+    // set (combined image sampler at binding 0).
+    struct GpuTexture {
+        VkImage         image   = VK_NULL_HANDLE;
+        VkDeviceMemory  memory  = VK_NULL_HANDLE;
+        VkImageView     view    = VK_NULL_HANDLE;
+        VkSampler       sampler = VK_NULL_HANDLE;
+        VkDescriptorSet set     = VK_NULL_HANDLE; // owned by a pool in descPools_
+        uint32_t        mipLevels = 1;
+    };
+
     bool createPipelines();
     bool createDefaultTexture();
+    // Allocate a descriptor set from the growable pool list (creates a new pool
+    // when the current ones are exhausted).
+    VkDescriptorSet allocateDescriptorSet();
+    // Destroy a GpuTexture's resources immediately (caller guarantees no frame
+    // in flight still references it).
+    void destroyGpuTextureNow(struct GpuTexture& t);
+    // Decrement deferred-delete counters and free anything that has aged out.
+    void reapPendingDeletes();
     void flush();
     // Reallocate the current frame's vertex buffer to at least desiredSize_.
     // Only safe to call at frame start (the frame's in-flight fence is signaled),
@@ -127,17 +180,24 @@ private:
 
     VkPipelineLayout      pipelineLayout_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout descLayout_     = VK_NULL_HANDLE;
-    VkDescriptorPool      descPool_       = VK_NULL_HANDLE;
-    VkDescriptorSet       descSet_        = VK_NULL_HANDLE;
     VkPipeline            trianglePipeline_ = VK_NULL_HANDLE;
     VkPipeline            linePipeline_     = VK_NULL_HANDLE;
 
-    // Default 1x1 white texture so the textured shader yields pure vertex color
-    // until per-texture binding is wired through rTexture.
-    VkImage        whiteImage_  = VK_NULL_HANDLE;
-    VkDeviceMemory whiteMemory_ = VK_NULL_HANDLE;
-    VkImageView    whiteView_   = VK_NULL_HANDLE;
-    VkSampler      sampler_     = VK_NULL_HANDLE;
+    // Growable list of descriptor pools (one set per texture).
+    std::vector<VkDescriptorPool> descPools_;
+
+    // All GPU textures, keyed by rITexture id.  kWhiteKey is the 1x1 white
+    // fallback used for untextured geometry (pure vertex color); it uses a
+    // sentinel that the engine's texture id allocator (0-based) never produces.
+    static constexpr uint64_t kWhiteKey = ~uint64_t(0);
+    std::unordered_map<uint64_t, GpuTexture> textures_;
+    VkDescriptorSet whiteSet_   = VK_NULL_HANDLE; // textures_[kWhiteKey].set
+    VkDescriptorSet curDescSet_ = VK_NULL_HANDLE; // bound by the next flush
+
+    // Textures retired while a frame might still reference them; freed once
+    // framesLeft reaches 0 (decremented each beginFrame).
+    struct PendingDelete { GpuTexture tex; uint32_t framesLeft; };
+    std::vector<PendingDelete> pendingDeletes_;
 
     // Per-frame host-visible vertex buffer (mapped, grows on demand).
     struct FrameBuffer {
