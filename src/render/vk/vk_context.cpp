@@ -28,6 +28,7 @@ of the License, or (at your option) any later version.
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <iostream>
 #include <set>
 
 namespace vk {
@@ -512,6 +513,16 @@ VkCommandBuffer VulkanContext::beginFrame() {
 
     VkResult acq = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
         imageAvailable_[currentFrame_], VK_NULL_HANDLE, &imageIndex_);
+
+    static int s_debugFrameCount = 0;
+    if (s_debugFrameCount < 10) {
+        std::cerr << "[vkdiag] beginFrame #" << s_debugFrameCount
+                  << " acq=" << int(acq)
+                  << " extent=" << extent_.width << "x" << extent_.height
+                  << " imageIndex=" << imageIndex_ << "\n";
+        ++s_debugFrameCount;
+    }
+
     if (acq == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapchain();
         return VK_NULL_HANDLE;
@@ -580,6 +591,14 @@ void VulkanContext::endFrame() {
     present.pSwapchains        = &swapchain_;
     present.pImageIndices      = &imageIndex_;
     VkResult pr = vkQueuePresentKHR(presentQueue_, &present);
+
+    static int s_debugPresentCount = 0;
+    if (s_debugPresentCount < 10) {
+        std::cerr << "[vkdiag] endFrame #" << s_debugPresentCount
+                  << " present=" << int(pr) << "\n";
+        ++s_debugPresentCount;
+    }
+
     if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR || framebufferResized_)
         recreateSwapchain();
 
