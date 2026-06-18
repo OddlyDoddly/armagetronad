@@ -11,7 +11,7 @@
 #   --clean         make clean before building
 #   --reconfigure   Force re-running bootstrap.sh + configure even if
 #                    configure/Makefile already exist
-#   --jobs=N        Parallel build jobs (default: nproc)
+#   --jobs=N        Parallel build jobs (default: 12)
 #   -h, --help      Show this help
 #
 # Any extra arguments after a literal '--' are passed straight through to
@@ -26,7 +26,7 @@ VULKAN=false
 DEBUG=false
 CLEAN=false
 RECONFIGURE=false
-JOBS="$(nproc 2>/dev/null || echo 4)"
+JOBS=12
 EXTRA_CONFIGURE_ARGS=()
 
 while [ $# -gt 0 ]; do
