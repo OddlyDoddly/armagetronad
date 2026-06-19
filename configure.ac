@@ -1315,11 +1315,21 @@ dnl *************************************************
 dnl FTGL has this one in its dependencies and libraries it passes via pkg-config, but
 dnl they're in the wrong order for static linking. That's why we add freetype once again.
 
+dnl freetype-config is missing on some distros that ship only the
+dnl pkg-config file (freetype2.pc); fall back to that so LIBS still picks
+dnl up -lfreetype explicitly (needed since vk_font.cpp calls FT_Init_FreeType
+dnl directly, not just transitively through -lftgl).
 AC_CHECK_LIB(freetype,FT_Init_FreeType,
-CPPFLAGS="$CPPFLAGS `$FREETYPE_CONFIG --cflags`"
-LIBS="$LIBS `$FREETYPE_CONFIG --libs`"
-,
-AC_MSG_ERROR([You need the library freetype to compile Armagetron. Read the file documentation/installation.txt.])
+[
+  if command -v "$FREETYPE_CONFIG" >/dev/null 2>&1; then
+    CPPFLAGS="$CPPFLAGS `$FREETYPE_CONFIG --cflags`"
+    LIBS="$LIBS `$FREETYPE_CONFIG --libs`"
+  else
+    CPPFLAGS="$CPPFLAGS `pkg-config freetype2 --cflags`"
+    LIBS="$LIBS `pkg-config freetype2 --libs`"
+  fi
+],
+[AC_MSG_ERROR([You need the library freetype to compile Armagetron. Read the file documentation/installation.txt.])]
 )
 
 dnl FTGL again. Check for the headers. First, try the individual header.

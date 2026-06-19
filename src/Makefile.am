@@ -141,7 +141,8 @@ endif
 if HAVE_VULKAN
 vulkan_sources=render/vk/vk_math.h \
 	render/vk/vk_context.h render/vk/vk_context.cpp \
-	render/vk/vk_renderer.h render/vk/vk_renderer.cpp
+	render/vk/vk_renderer.h render/vk/vk_renderer.cpp \
+	render/vk/vk_font.h render/vk/vk_font.cpp
 # SPIR-V byte-code headers are generated from the GLSL sources below.
 BUILT_SOURCES=render/vk/batch_vert.spv.h render/vk/batch_frag.spv.h
 else

@@ -37,6 +37,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "rRender.h"
 #include "rTexture.h"
 
+#ifdef HAVE_VULKAN
+#include "vk/vk_font.h"
+#endif
+
 #ifdef HAVE_FTGL_FTGL_H
 // single include. practical.
 #include <FTGL/ftgl.h>
@@ -174,14 +178,30 @@ float sr_lineHeight = 1.;
 static tConfItem< float > sr_lineHeightconf( "LINE_HEIGHT", sr_lineHeight, &restrictLineHeight );
 
 class rFontContainer : std::map<int, FTFont *> {
+    float sizeFactor_ = .8; // guess, then improve
     FTFont &New(int size);
     FTFont *Load(tString const &path);
+    tString FontPath() const;
+#ifdef HAVE_VULKAN
+    vk::VkFontCache * vkCache_ = nullptr;
+#endif
 public:
+    int SizeForHeight(float height) const {
+        return int(height/sr_lineHeight*sizeFactor_*sr_screenHeight/2.+.5);
+    }
     void clear() {
         for(iterator i = begin(); i != end(); ++i) {
             delete i->second;
         }
         std::map<int, FTFont *>::clear();
+#ifdef HAVE_VULKAN
+        if ( vkCache_ )
+        {
+            vkCache_->DropAll();
+            delete vkCache_;
+            vkCache_ = nullptr;
+        }
+#endif
     }
     /*
     float GetWidth(tString const &str, float height) {
@@ -195,6 +215,15 @@ public:
     }
     void Render(FTGL_STRING const &str, float height, tCoord const &where) {
         //std::cerr << "len: " << str.size() << std::endl;
+#if defined(HAVE_VULKAN) && defined(FTGL_HAS_UTF8)
+        if(sg_vulkanRenderer) {
+            if(!vkCache_) vkCache_ = new vk::VkFontCache(FontPath());
+            vk::VkGlyphAtlas & atlas = vkCache_->GetAtlas(SizeForHeight(height));
+            if(atlas.ok())
+                vk::RenderTextVulkan(atlas, str.c_str(), where, 2./sr_screenWidth, 2./sr_screenHeight);
+            return;
+        }
+#endif
         if(sr_fontType >= sr_fontTexture) {
             glPushMatrix();
             glTranslatef(where.x, where.y, 0.);
@@ -221,8 +250,7 @@ public:
         }
     }
     FTFont &GetFont(float height) {
-        static float size_factor = .8; // guess, then improve
-        int size = int(height/sr_lineHeight*size_factor*sr_screenHeight/2.+.5);
+        int size = SizeForHeight(height);
         FTFont *ret;
         if(count(size)) {
             ret = (*this)[size]; //already exists
@@ -233,7 +261,7 @@ public:
         // current font… this assumes the line height is linear to
         // the font size, which should be true unless the font uses
         // different glyphs for different sizes.
-        size_factor = size / ret->LineHeight();
+        sizeFactor_ = size / ret->LineHeight();
         return *ret;
     }
     void BBox(FTGL_STRING const &str, float height, tCoord where, float &l, float &b, float &r, float &t) {
@@ -298,16 +326,17 @@ FTFont *rFontContainer::Load(tString const &path) {
     }
     return font;
 }
+tString rFontContainer::FontPath() const {
+    if(useCustomFont == 1) {
+        return customFont;
+    }
+    tString path = "textures/" + fontFile;
+    return tDirectories::Data().GetReadPath(path);
+}
+
 FTFont &rFontContainer::New(int size) {
     FTFont *font;
-    tString theFontFile("");
-
-    if(useCustomFont == 1) {
-        theFontFile = customFont;
-    } else {
-        theFontFile = "textures/" + fontFile;
-        theFontFile = tDirectories::Data().GetReadPath(theFontFile);
-    }
+    tString theFontFile = FontPath();
     font = Load(theFontFile);
     //std::cout << "Use custom font: " << useCustomFont << std::endl;
     //std::cout << "The font file: " << theFontFile << std::endl;
