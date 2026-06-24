@@ -95,6 +95,11 @@ protected:
     eCoord dir;               // direction
     REAL  z;									// and height (currently unused)
 
+    // which drivable surface of the surface-graph this object lives on.
+    // 0 is the legacy ground plane; non-zero only when 3D maps are active.
+    // (type matches eSurfaceId == unsigned short in eSurface.h)
+    unsigned short surfaceId_ = 0;
+
     tJUST_CONTROLLED_PTR< eTeam > team;       		 				// the team we belong to
 
     tJUST_CONTROLLED_PTR<eFace> currentFace;  // the eFace pos it is currently
@@ -115,6 +120,10 @@ public:
 
     eGrid* Grid()        const { return grid;        }
     eFace* CurrentFace() const { return currentFace; }
+
+    //! the surface-graph surface this object is currently on (0 == ground)
+    unsigned short SurfaceId() const { return surfaceId_; }
+    void SetSurfaceId( unsigned short id ) { surfaceId_ = id; }
 
     virtual void AddRef()  = 0;          //!< adds a reference
     virtual void Release() = 0;         //!< removes a reference

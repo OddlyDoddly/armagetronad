@@ -101,7 +101,8 @@ libnetwork_a_SOURCES=network/nAuthentication.cpp\
 	network/nProtoBuf.cpp network/nProtoBuf.h network/nProtoBufForward.h\
 	network/nObserver.cpp network/nObserver.h network/nPriorizing.cpp network/nPriorizing.h\
 	network/nServerInfo.cpp network/nServerInfo.h network/nSimulatePing.h network/nSocket.cpp\
-	network/nSocket.h network/nSpamProtection.cpp network/nSpamProtection.h
+	network/nSocket.h network/nSpamProtection.cpp network/nSpamProtection.h\
+	network/nFeatures.cpp network/nFeatures.h
 
 if BUILDMAIN
 libenginecore_a_SOURCES=engine/eGameObject.cpp engine/eGameObject.h \
@@ -126,7 +127,9 @@ libengine_a_SOURCES=engine/eAdvWall.cpp engine/eAdvWall.h engine/eAuthentication
 	engine/eChat.cpp engine/eChat.h \
 	engine/eEventNotification.h engine/eEventNotification.cpp \
 	engine/eWarmup.h engine/eWarmup.cpp \
-	engine/eLadderLog.h engine/eLadderLog.cpp
+	engine/eLadderLog.h engine/eLadderLog.cpp \
+	engine/eSurface.cpp engine/eSurface.h \
+	engine/eWorld.cpp engine/eWorld.h
 
 
 if MACOSX

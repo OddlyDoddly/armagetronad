@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 #include "eAdvWall.h"
 #include "eGrid.h"
+#include "eSurface.h"
 #include "uInput.h"
 #include "tMath.h"
 #include "nConfig.h"
@@ -419,6 +420,29 @@ rerun:
                     if(res != eContinue)
                     {
                         return;
+                    }
+                }
+
+                // surface-graph portal: hand this object across to the
+                // neighbouring surface's grid. Frames are identity (local ==
+                // world), so (x,y) is unchanged; only the surface id and the
+                // derived height z change. Portal walls are non-massive, so the
+                // object never dies crossing a ramp/seam ("don't die on a slope").
+                {
+                    ePortal * portal = w ? w->Portal() : NULL;
+                    if ( portal )
+                    {
+                        eSurface * cur  = ( portal->A()->Grid() == grid ) ? portal->A() : portal->B();
+                        eSurface * next = portal->Other( cur );
+                        if ( next && next->Grid() && next->Grid() != grid )
+                        {
+                            grid = next->Grid();
+                            surfaceId_ = next->Id();
+                            grid->Range( stop.NormSquared() );
+                            FindCurrentFace();
+                            z = next->ZAt( pos );
+                            continue; // resume movement on the new surface
+                        }
                     }
                 }
 

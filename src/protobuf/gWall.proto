@@ -37,6 +37,8 @@ message PlayerWallSync
     optional Tools.Position  begin_pos = 3; // the start position of the wall
     optional Tools.Direction direction = 4; // the direction the wall grows into
 
+    optional uint32 surface_id = 12; // surface-graph surface this wall is on (3D feature only; 0 == ground)
+
     optional float begin_distance      = 5; // distance the cycle had traveled at wall start
     optional float begin_time          = 6; // game time the wall was created at
 

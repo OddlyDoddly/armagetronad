@@ -579,8 +579,9 @@ static char const * sn_versionString[] =
         "0.3.1", // 20
         "0.3.1_pb", // 21
         "0.4_auto_team", // 22
+        "0.5_3dmaps", // 23 - surface-graph 3D maps + feature negotiation
         // move #ifdef downwards to define new protocol versions on 0.4
-#ifdef RESERVE_FOR_0_4 
+#ifdef RESERVE_FOR_0_4
         "0.4_reserved2", // 23
         "0.4_reserved3", // 24
         "0.4_reserved4", // 25

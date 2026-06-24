@@ -18,6 +18,9 @@
 #include "eCoord.h"
 #include "eGrid.h"
 #include "eTess2.h"
+#include "eSurface.h"
+#include "eWorld.h"
+#include "nFeatures.h"
 #include "gWall.h"
 #include "gArena.h"
 #include "tMemManager.h"
@@ -140,6 +143,7 @@ float tSysTimeHack2(float x)
 gParser::gParser(gArena *anArena, eGrid *aGrid):
         theArena(anArena),
         theGrid(aGrid),
+        is3DMap_(false),
         rimTexture(0),
         sizeMultiplier(0.0)
 {
@@ -159,6 +163,12 @@ gParser::gParser(gArena *anArena, eGrid *aGrid):
 #endif //DEBUG_ZONE_SYNC
     //    tValue::Expr::functions[tString("sizeMultiplier")] = &gArena::GetSizeMultiplierHack; // static
 
+}
+
+gParser::~gParser()
+{
+    // out-of-line so the controlled-pointer member (eWorld) is destroyed where
+    // its type is complete; nothing else to do.
 }
 
 bool
@@ -1586,6 +1596,230 @@ ePoint * gParser::DrawRim( eGrid * grid, ePoint * start, eCoord const & stop, RE
     return grid->DrawLine( start, stop, newWall, 0 );
 }
 
+ePoint * gParser::DrawPortal( eGrid * grid, ePoint * start, eCoord const & stop, ePortal * portal, REAL h )
+{
+    REAL length = ( stop - (*start) ).Norm();
+    REAL rimTextureStop = rimTexture + length;
+    tJUST_CONTROLLED_PTR< gPortalWall > newWall = tNEW( gPortalWall )( grid, portal, rimTexture, rimTextureStop, h );
+    rimTexture = rimTextureStop;
+    return grid->DrawLine( start, stop, newWall, 0 );
+}
+
+// ---------------------------------------------------------------------------
+// map-2.0 surface-graph primitives
+// ---------------------------------------------------------------------------
+
+//! world-unit height of one z-level step (scaled by the size multiplier).
+//! Used only to derive render-height; physics stays 2D within each surface.
+static const REAL GRID_LEVEL_HEIGHT = 40.0;
+
+static eZLevel sg_ParseLevel( const char * s )
+{
+    if ( s && !strcmp( s, "basement" ) ) return eZLevel::Basement;
+    if ( s && !strcmp( s, "air" ) )      return eZLevel::Air;
+    return eZLevel::Ground;
+}
+
+static eSurfaceMaterial sg_ParseMaterial( const char * s )
+{
+    if ( s && !strcmp( s, "light" ) ) return eSurfaceMaterial::Light;
+    if ( s && !strcmp( s, "glass" ) ) return eSurfaceMaterial::Glass;
+    return eSurfaceMaterial::Grid;
+}
+
+//! cardinal unit direction for a ramp's rise
+static eCoord sg_ParseDirection( const char * s )
+{
+    if ( s && !strcmp( s, "west" ) )  return eCoord( -1,  0 );
+    if ( s && !strcmp( s, "north" ) ) return eCoord(  0,  1 );
+    if ( s && !strcmp( s, "south" ) ) return eCoord(  0, -1 );
+    return eCoord( 1, 0 ); // east / default
+}
+
+eGrid * gParser::newSurfaceGrid()
+{
+    eGrid * g = tNEW( eGrid )();
+    g->Create();
+    // mirror the ground grid's set of driving directions so the cardinal
+    // constraint is identical on every surface
+    if ( theGrid )
+        g->SetWinding( theGrid->WindingNumber() );
+    return g;
+}
+
+void
+gParser::parseFloor(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
+{
+    (void)grid; // floors live on their own surface grid, not the ground grid
+    eZLevel level = sg_ParseLevel( myxmlGetProp( cur, "level" ).Get() );
+    eSurfaceMaterial material = sg_ParseMaterial( myxmlGetProp( cur, "material" ).Get() );
+
+    eSurface * surface = theWorld_->CreateSurface( eSurfaceKind::Floor );
+    eGrid * sgrid = newSurfaceGrid();
+    surface->SetGrid( sgrid );
+    surface->SetLevels( level, level );
+    surface->SetMaterial( material );
+    surface->SetZMap( REAL( (int)level ) * GRID_LEVEL_HEIGHT * sizeMultiplier, eCoord( 0, 0 ) );
+
+    // read the footprint polygon and draw its boundary into the surface's grid
+    std::vector< eCoord > footprint;
+    ePoint * R = NULL;
+    eCoord firstCoord( 0, 0 );
+
+    xmlNodePtr p = cur->xmlChildrenNode;
+    while ( p != NULL )
+    {
+        if ( !xmlStrcmp( p->name, (const xmlChar *)"text" ) || !xmlStrcmp( p->name, (const xmlChar *)"comment" ) ) {}
+        else if ( isElement( p->name, (const xmlChar *)"Point", keyword ) )
+        {
+            eCoord c = eCoord( myxmlGetPropFloat( p, "x" ), myxmlGetPropFloat( p, "y" ) ) * sizeMultiplier;
+            footprint.push_back( c );
+            if ( R == NULL )
+            {
+                R = sgrid->Insert( c );
+                firstCoord = c;
+            }
+            else
+            {
+                R = this->DrawRim( sgrid, R, c );
+            }
+        }
+        p = p->next;
+    }
+
+    // close the polygon
+    if ( R != NULL && footprint.size() >= 3 )
+        this->DrawRim( sgrid, R, firstCoord );
+
+    surface->SetFootprint( footprint );
+}
+
+void
+gParser::parseRamp(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
+{
+    (void)grid; (void)keyword; // ramps live on their own surface grid
+    eZLevel from = sg_ParseLevel( myxmlGetProp( cur, "fromLevel" ).Get() );
+    eZLevel to   = sg_ParseLevel( myxmlGetProp( cur, "toLevel" ).Get() );
+    eCoord  d    = sg_ParseDirection( myxmlGetProp( cur, "direction" ).Get() );
+
+    REAL bx     = myxmlGetPropFloat( cur, "x" );
+    REAL by     = myxmlGetPropFloat( cur, "y" );
+    REAL width  = myxmlGetPropFloat( cur, "width" );
+    REAL length = myxmlGetPropFloat( cur, "length" );
+
+    eCoord base( bx, by );
+    eCoord perp( -d.y, d.x ); // 90-degree left of the rise direction
+
+    // rectangle corners: low edge at the base (fromLevel), high edge at the
+    // far end (toLevel). Scaled into world units.
+    eCoord lowBeg  = base * sizeMultiplier;
+    eCoord lowEnd  = ( base + perp * width ) * sizeMultiplier;
+    eCoord highBeg = ( base + d * length ) * sizeMultiplier;
+    eCoord highEnd = ( base + d * length + perp * width ) * sizeMultiplier;
+
+    eSurface * surface = theWorld_->CreateSurface( eSurfaceKind::Ramp );
+    eGrid * sgrid = newSurfaceGrid();
+    surface->SetGrid( sgrid );
+    surface->SetLevels( from, to );
+
+    REAL z0 = REAL( (int)from ) * GRID_LEVEL_HEIGHT * sizeMultiplier;
+    REAL z1 = REAL( (int)to )   * GRID_LEVEL_HEIGHT * sizeMultiplier;
+    REAL lengthScaled = length * sizeMultiplier;
+    eCoord grad = ( lengthScaled > EPS ) ? d * ( ( z1 - z0 ) / lengthScaled ) : eCoord( 0, 0 );
+    surface->SetZMap( z0, grad );
+
+    std::vector< eCoord > footprint;
+    footprint.push_back( lowBeg );
+    footprint.push_back( lowEnd );
+    footprint.push_back( highEnd );
+    footprint.push_back( highBeg );
+    surface->SetFootprint( footprint );
+
+    // auto-derive portals to the floors the ramp meets at each end. The seam
+    // midpoints decide which floor (and thus z-level) each end connects to.
+    eCoord lowMid  = ( lowBeg  + lowEnd  ) * 0.5;
+    eCoord highMid = ( highBeg + highEnd ) * 0.5;
+    eSurface * lowFloor  = theWorld_->FloorAt( from, lowMid );
+    eSurface * highFloor = theWorld_->FloorAt( to,   highMid );
+    ePortal * lowPortal  = lowFloor  ? theWorld_->Connect( surface, lowFloor,  lowBeg,  lowEnd  ) : NULL;
+    ePortal * highPortal = highFloor ? theWorld_->Connect( surface, highFloor, highBeg, highEnd ) : NULL;
+    if ( !lowFloor )
+        con << "Warning: ramp low seam found no floor to connect to.\n";
+    if ( !highFloor )
+        con << "Warning: ramp high seam found no floor to connect to.\n";
+
+    // Draw the ramp boundary into its own grid. The two end seams become
+    // non-massive portal walls (drive on/off the ramp); the two long sides are
+    // massive guard rails. A seam with no matching floor falls back to a rail.
+    ePoint * R = sgrid->Insert( lowBeg );
+    R = lowPortal  ? this->DrawPortal( sgrid, R, lowEnd,  lowPortal  ) : this->DrawRim( sgrid, R, lowEnd );
+    R = this->DrawRim( sgrid, R, highEnd );                                   // guard rail
+    R = highPortal ? this->DrawPortal( sgrid, R, highBeg, highPortal ) : this->DrawRim( sgrid, R, highBeg );
+    this->DrawRim( sgrid, R, lowBeg );                                        // guard rail
+
+    // Mirror each seam into the adjacent floor's grid as a portal, so a cycle
+    // driving on the floor can step onto the ramp at the same world seam.
+    if ( lowPortal )
+    {
+        ePoint * F = lowFloor->Grid()->Insert( lowBeg );
+        this->DrawPortal( lowFloor->Grid(), F, lowEnd, lowPortal );
+    }
+    if ( highPortal )
+    {
+        ePoint * F = highFloor->Grid()->Insert( highBeg );
+        this->DrawPortal( highFloor->Grid(), F, highEnd, highPortal );
+    }
+}
+
+void
+gParser::parseBuilding(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
+{
+    // A building is an extruded footprint that acts as a solid obstacle on its
+    // level. We draw its footprint as massive walls on the active grid (so it
+    // blocks cycles now) and record it on the world (footprint + height + style)
+    // for the renderer to extrude into a Tron-Legacy block.
+    eBuilding building;
+    building.height = myxmlGetPropFloat( cur, "height" ) * sizeMultiplier;
+    building.level  = sg_ParseLevel( myxmlGetProp( cur, "level" ).Get() );
+    {
+        char const * style = myxmlGetProp( cur, "style" ).Get();
+        building.style = style ? style : "tron";
+    }
+
+    ePoint * R = NULL;
+    eCoord firstCoord( 0, 0 );
+    bool any = false;
+
+    xmlNodePtr p = cur->xmlChildrenNode;
+    while ( p != NULL )
+    {
+        if ( !xmlStrcmp( p->name, (const xmlChar *)"text" ) || !xmlStrcmp( p->name, (const xmlChar *)"comment" ) ) {}
+        else if ( isElement( p->name, (const xmlChar *)"Point", keyword ) )
+        {
+            eCoord c = eCoord( myxmlGetPropFloat( p, "x" ), myxmlGetPropFloat( p, "y" ) ) * sizeMultiplier;
+            building.footprint.push_back( c );
+            if ( R == NULL )
+            {
+                R = grid->Insert( c );
+                firstCoord = c;
+            }
+            else
+            {
+                // extrude the footprint side walls to the building's height
+                R = this->DrawRim( grid, R, c, building.height );
+            }
+            any = true;
+        }
+        p = p->next;
+    }
+
+    if ( any && R != NULL )
+        this->DrawRim( grid, R, firstCoord, building.height );
+
+    if ( any )
+        theWorld_->AddBuilding( building );
+}
+
 void
 gParser::parseWallLine(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword) {
     REAL ox, oy, x, y;
@@ -1762,6 +1996,18 @@ gParser::parseAlternativeContent(eGrid *grid, xmlNodePtr cur)
             parseZone(grid, cur, keyword);
 #endif
         }
+        else if (isElement(cur->name, (const xmlChar *)"Floor", keyword)) {
+            if ( is3DMap_ )
+                parseFloor(grid, cur, keyword);
+        }
+        else if (isElement(cur->name, (const xmlChar *)"Ramp", keyword)) {
+            if ( is3DMap_ )
+                parseRamp(grid, cur, keyword);
+        }
+        else if (isElement(cur->name, (const xmlChar *)"Building", keyword)) {
+            if ( is3DMap_ )
+                parseBuilding(grid, cur, keyword);
+        }
         else if (isElement(cur->name, (const xmlChar *)"Wall", keyword)) {
             parseWall(grid, cur, keyword);
         }
@@ -1848,6 +2094,18 @@ gParser::parseField(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
 #else
             parseZone(grid, cur, keyword);
 #endif
+        }
+        else if (isElement(cur->name, (const xmlChar *)"Floor", keyword)) {
+            if ( is3DMap_ )
+                parseFloor(grid, cur, keyword);
+        }
+        else if (isElement(cur->name, (const xmlChar *)"Ramp", keyword)) {
+            if ( is3DMap_ )
+                parseRamp(grid, cur, keyword);
+        }
+        else if (isElement(cur->name, (const xmlChar *)"Building", keyword)) {
+            if ( is3DMap_ )
+                parseBuilding(grid, cur, keyword);
         }
         else if (isElement(cur->name, (const xmlChar *)"Wall", keyword)) {
             parseWall(grid, cur, keyword);
@@ -2034,6 +2292,14 @@ gParser::parseMap(eGrid *grid, xmlNodePtr cur, const xmlChar * keyword)
 {
     mapVersion = myxmlGetPropInt(cur, "version");
 
+    // map format 2.0 (encoded as integer 200) introduces the surface-graph
+    // primitives. They are only honoured when the 3D feature is negotiated on
+    // for everyone in the session; otherwise we fall back to the 2D path and
+    // collapse the map onto the ground plane.
+    is3DMap_ = ( mapVersion >= 200 ) && nFeatures::ThreeDActive();
+    if ( theWorld_ )
+        theWorld_->SetIs3D( is3DMap_ );
+
     cur = cur->xmlChildrenNode;
     while (cur != NULL) {
         if (!xmlStrcmp(cur->name, (const xmlChar *)"text") || !xmlStrcmp(cur->name, (const xmlChar *)"comment")) {}
@@ -2153,6 +2419,12 @@ void
 gParser::Parse()
 {
     rimTexture = 0;
+
+    // Build a fresh surface graph for this map. Surface 0 wraps the arena's
+    // primary grid (the legacy ground plane); 3D maps may register more.
+    is3DMap_ = false;
+    theWorld_ = tNEW( eWorld )( theGrid );
+
     xmlNodePtr cur;
     cur = xmlDocGetRootElement(m_Doc);
 
@@ -2219,6 +2491,10 @@ gParser::Parse()
     mapZones.clear();
     ZIPtoMap.clear();
 #endif
+
+    // hand the finished surface graph to the arena
+    if ( theArena )
+        theArena->SetWorld( theWorld_ );
 
     //        fprintf(stderr,"ERROR: Map file is missing root \'Resources\' node");
 

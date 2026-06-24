@@ -35,6 +35,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "eSpawn.h"
 #include "gWall.h"
 #include "gParser.h"
+#include "eWorld.h"
 #include "tRandom.h"
 #include "eRectangle.h"
 #include "gCycle.h"
@@ -74,6 +75,10 @@ void gSpawnPoint::FindPos(eCoord &loc, eCoord &dir)
 
 gArena::gArena():spawnPoints()
 {
+}
+
+void gArena::SetWorld( eWorld * world ){
+    world_ = world;
 }
 
 void gArena::NewSpawnPoint(const eCoord &loc,const eCoord &dir){

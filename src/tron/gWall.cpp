@@ -37,6 +37,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "rTexture.h"
 #include "eTimer.h"
 #include "gGame.h"
+#include "gArena.h"
+#include "eWorld.h"
+#include "eSurface.h"
 #include "rScreen.h"
 #include "rRender.h"
 #include "eCamera.h"
@@ -49,6 +52,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "ePlayer.h"
 #include "eTess2.h"
 #include "nConfig.h"
+#include "nFeatures.h"
 #include "nProtoBuf.h"
 
 #include <fstream>
@@ -581,6 +585,10 @@ gPlayerWall::gPlayerWall(gNetPlayerWall*w, gCycle *p)
     if (cycle_)
         windingNumber_ = cycle_->WindingNumber();
 
+    // inherit the surface this wall segment belongs to (0 == ground in 2D)
+    if ( w )
+        surfaceId_ = w->SurfaceId();
+
 #ifdef DEBUG
     if (!cycle_)
     {
@@ -1101,8 +1109,21 @@ static const bool sg_renderBulkLines = true;
 static const bool sg_renderBulkQuads = true;
 #endif
 
+//! base render height of a surface-graph surface (0 for the ground / 2D maps).
+//! Lets walls and trails draw at the height of the surface they belong to.
+static REAL se_SurfaceBaseZ( unsigned short surfaceId )
+{
+    if ( surfaceId == 0 )
+        return 0;
+    gArena * arena = sg_GetArena();
+    eWorld * world = arena ? arena->GetWorld() : NULL;
+    eSurface * surface = world ? world->SurfaceById( surfaceId ) : NULL;
+    return surface ? surface->BaseZ() : 0;
+}
+
 void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL te,REAL r,REAL g,REAL b,REAL a, gWallRenderMode mode ){
     REAL hfrac=1;
+    REAL zbase = se_SurfaceBaseZ( surfaceId_ );
 
     if (bool(cycle_) && !cycle_->Alive() && gCycle::WallsStayUpDelay() >= 0 ){
         REAL dt=(se_GameTime()-cycle_->deathTime-gCycle::WallsStayUpDelay())*2;
@@ -1140,6 +1161,7 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
             inst.p2x = p2.x; inst.p2y = p2.y;
             inst.ta = ta;    inst.te = te;
             inst.h = h; inst.hfrac = hfrac;
+            inst.zbase = zbase; // surface-graph: draw at the wall's surface height
             // Mirror upperlinecolor(): in wireframe texture mode use white lines.
             if ( rTextureGroups::TextureMode[rTextureGroups::TEX_WALL] < 0 )
                 inst.r = inst.g = inst.b = 1.f;
@@ -1156,9 +1178,9 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
             BeginLines();
 
             upperlinecolor(r,g,b,a);
-            Vertex(p1.x,p1.y,h*hfrac);
+            Vertex(p1.x,p1.y,zbase + h*hfrac);
             upperlinecolor(r,g,b,a);
-            Vertex(p2.x,p2.y,h*hfrac);
+            Vertex(p2.x,p2.y,zbase + h*hfrac);
         }
 
         //glColor4f(r,g,b,a);
@@ -1178,19 +1200,19 @@ void gNetPlayerWall::RenderNormal(const eCoord &p1,const eCoord &p2,REAL ta,REAL
 
             Color(r,g,b,1);
             TexCoord(ta,hfrac);
-            Vertex(p1.x,p1.y,extrarise);
+            Vertex(p1.x,p1.y,zbase + extrarise);
 
             Color(r,g,b,1);
             TexCoord(ta,0);
-            Vertex(p1.x,p1.y,extrarise + h*hfrac);
+            Vertex(p1.x,p1.y,zbase + extrarise + h*hfrac);
 
             Color(r,g,b,1);
             TexCoord(te,0);
-            Vertex(p2.x,p2.y,extrarise + h*hfrac);
+            Vertex(p2.x,p2.y,zbase + extrarise + h*hfrac);
 
             Color(r,g,b,1);
             TexCoord(te,hfrac);
-            Vertex(p2.x,p2.y,extrarise);
+            Vertex(p2.x,p2.y,zbase + extrarise);
         }
         } // end else (legacy path)
     }
@@ -1685,6 +1707,9 @@ gNetPlayerWall::gNetPlayerWall(gCycle *cyc,
     preliminary=(sn_GetNetState()==nCLIENT);
     obsoleted_=-100;
     gridding=1E+20;
+    // surface-graph: this wall belongs to the surface its cycle is on
+    if ( cyc )
+        surfaceId_ = cyc->SurfaceId();
     MyInitAfterCreation();
 }
 
@@ -2174,6 +2199,16 @@ void gNetPlayerWall::WriteSync( Game::PlayerWallSync & sync, bool init ) const
         sync.set_begin_distance( dbegin );
         sync.set_begin_time( tBeg );
         sync.set_preliminary( preliminary );
+
+        // surface-graph: record which surface this wall lives on, so the
+        // client can render it at the right height. 3D feature only.
+        if ( nFeatures::ThreeDActive() )
+        {
+            unsigned short sid = surfaceId_;
+            if ( sid == 0 && cycle_ )
+                sid = cycle_->SurfaceId();
+            sync.set_surface_id( sid );
+        }
     }
 
     if (inGrid){
@@ -2207,6 +2242,10 @@ static bool sg_ServerSentHoles = false;
 void gNetPlayerWall::ReadSync( Game::PlayerWallSync const & sync, nSenderInfo const & sender )
 {
     nNetObject::ReadSync( sync.base(), sender );
+
+    // surface-graph: authoritative surface for this wall (3D feature only)
+    if ( sync.has_surface_id() )
+        surfaceId_ = sync.surface_id();
 
     ClearDisplayList();
 

@@ -28,6 +28,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 #include "eEventNotification.h"
 #include "gCycle.h"
 #include "nConfig.h"
+#include "nFeatures.h"
 #include "rModel.h"
 //#include "eTess.h"
 #include "eGrid.h"
@@ -5219,6 +5220,12 @@ void gCycle::WriteSync(  Game::CycleSync & sync, bool init ) const
     // write brake
     sync.set_brake_compressed( compressZeroOne.Write( brakingReservoir ) );
 
+    // surface-graph: tell clients which surface we're on. Only when the 3D
+    // feature is negotiated on for everyone -- otherwise the field is never
+    // serialized and the session stays on the pure 2D wire format.
+    if ( nFeatures::ThreeDActive() )
+        sync.set_surface_id( SurfaceId() );
+
     // set new sync times
     // nextSync=tSysTimeFloat()+sg_syncIntervalEnemy;
     // nextSyncOwner=tSysTimeFloat()+sg_GetSyncIntervalSelf( this );
@@ -5527,6 +5534,12 @@ void gCycle::ReadSync( Game::CycleSync const & syncX, nSenderInfo const & sender
     //eDebugLine::SetTimeout( 1.0 );
     //eDebugLine::SetColor( 1,1,1 );
     //eDebugLine::Draw( lastSyncMessage_.pos, 0, lastSyncMessage_.pos, 20 );
+
+    // surface-graph: adopt the authoritative surface id from the server. Never
+    // derived from (x,y) on the client (overhangs make that ambiguous); local
+    // portal traversal keeps the grid aligned with this id.
+    if ( syncX.has_surface_id() )
+        SetSurfaceId( syncX.surface_id() );
 
     sync.speed = syncX.speed();
     sync_alive = syncX.alive();
